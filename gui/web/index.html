@@ -375,11 +375,10 @@ async function go(){
   S.plan = plan; S.logNext = 0; S.cleanupRun = {eligible: true, opened: false}; showRun();
 }
 function askSuperClean(){
-  modal(`<h3>开始超级清静？</h3><p class="lead">自动处理已适配的广告开关、明确的营销通知、可关闭的快应用和已识别的广告组件。开始前会备份，服务通知和受保护的组件会保留。</p><div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="runSuperClean(this)">开始清理</button></div>`);
+  modal(`<h3>开始超级清静？</h3><p class="lead">自动处理已适配的广告开关、明确的营销通知、可关闭的快应用和已识别的广告组件。开始前会备份，服务通知和受保护的组件会保留。</p><div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="runSuperClean()">开始清理</button></div>`);
 }
-async function runSuperClean(button){
-  button.disabled = true;
-  button.textContent = "正在检测并扫描…";
+async function runSuperClean(){
+  modal(`<h3>正在检测并扫描…</h3><p class="lead">开始执行后，可以在进度页停止清理。</p>`);
   let result;
   try {
     result = await api.super_clean(S.serial);

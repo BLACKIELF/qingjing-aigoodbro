@@ -1391,6 +1391,8 @@ class Api:
             return {"error": status.get("error") or "无法确认手机状态，请重新连接"}
         if status.get("locked") or status.get("input_blocked"):
             return {"error": "请解锁手机并确认 USB 调试权限后再试"}
+        if status.get("fold_open") and status.get("steps"):
+            return {"error": "请合上折叠屏，用外屏完成清理"}
         scan = self.chan_scan(serial)
         if scan.get("error"):
             return scan
