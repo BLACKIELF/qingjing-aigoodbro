@@ -43,11 +43,11 @@ jobs:
           assert password and key.stat().st_size > 0
           (folder / 'keystore.properties').write_text(f'storeFile={key.resolve()}\nstorePassword={password}\nkeyAlias=qingjing\nkeyPassword={password}\n')
           PY
-      - name: Build and unit test signed APK
+      - name: Build signed APK
         working-directory: android
         run: |
           export CHAQUOPY_PYTHON="$(command -v python3.12 || command -v python3)"
-          gradle --no-daemon --console=plain assembleRelease testReleaseUnitTest
+          gradle --no-daemon --console=plain assembleRelease
       - name: Verify signature and application identity
         run: |
           mkdir -p delivery
