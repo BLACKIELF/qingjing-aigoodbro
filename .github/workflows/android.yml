@@ -24,7 +24,9 @@ jobs:
       - name: Prepare Android SDK
         run: |
           test -d "$ANDROID_HOME"
-          sdkmanager --install "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          test -x "$sdkmanager"
+          "$sdkmanager" --install "platforms;android-37" "build-tools;37.0.0"
       - name: Restore private signing key
         env:
           KEYSTORE_B64: ${{ secrets.QINGJING_KEYSTORE_B64 }}
