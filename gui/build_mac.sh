@@ -38,7 +38,7 @@ $RUN $PY -m PyInstaller --noconfirm --windowed --name "$NAME" \
   gui/launch.py >/dev/null 2>gui/build/pyinstaller-$ARCH.log
 APP="$OUT/$NAME.app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1108.3" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1108.4" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 11.0" "$APP/Contents/Info.plist"
 # 包里任何一个库要求高于 macOS 11，旧系统就打不开：发布前拦下
 # 逐个文件查：vtool 遇到非 Mach-O 文件会返回错误，直接交给 xargs 会让它中途停下、漏查。
@@ -69,7 +69,7 @@ if [ -n "$SIGN_ID" ]; then
   fi
 fi
 
-DMG="gui/dist/Qingjing-AiGoodBro-$VER-1108v3-mac-$TAG.dmg"
+DMG="gui/dist/Qingjing-AiGoodBro-$VER-1108v4-mac-$TAG.dmg"
 rm -f "$DMG"
 STAGE="gui/build/$ARCH/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/应用程序"
