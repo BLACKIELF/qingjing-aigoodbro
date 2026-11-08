@@ -26,7 +26,7 @@ jobs:
           test -d "$ANDROID_HOME"
           sdkmanager="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
           test -x "$sdkmanager"
-          "$sdkmanager" --install "platforms;android-37" "build-tools;37.0.0"
+          "$sdkmanager" --install "platforms;android-37.0" "build-tools;37.0.0"
       - name: Restore private signing key
         env:
           KEYSTORE_B64: ${{ secrets.QINGJING_KEYSTORE_B64 }}
@@ -51,7 +51,7 @@ jobs:
       - name: Verify signature and application identity
         run: |
           mkdir -p delivery
-          cp "$QINGJING_ANDROID_BUILD_DIR/outputs/apk/release/app-release.apk" delivery/Qingjing-AiGoodBro-1.0.0-1108v1-android-arm64.apk
+          cp "$QINGJING_ANDROID_BUILD_DIR/outputs/apk/release/app-release.apk" delivery/Qingjing-AiGoodBro-1.0.1-1108v2-android-arm64.apk
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs delivery/*.apk
           "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging delivery/*.apk | tee delivery/android-package-info.txt
           grep -q "package: name='com.aigoodbro.qingjing'" delivery/android-package-info.txt
@@ -59,6 +59,6 @@ jobs:
           sha256sum *.apk > SHA256SUMS-android.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Qingjing-AiGoodBro-android-1108v1
+          name: Qingjing-AiGoodBro-android-1108v2
           path: delivery/
           if-no-files-found: error

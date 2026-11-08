@@ -177,7 +177,14 @@ fun HomeScreen(model: AppModel) {
         },
         actions = {
             SizedButton(
-                text = "一键去广告",
+                text = "超级清静",
+                onClick = model::confirmSuperClean,
+                modifier = Modifier.fillMaxWidth(),
+                height = ctaHeight(),
+            )
+            Spacer(Modifier.height(8.dp))
+            SizedButton(
+                text = "手动选择去广告",
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                     model.oneTap()
@@ -185,6 +192,7 @@ fun HomeScreen(model: AppModel) {
                 modifier = Modifier.fillMaxWidth(),
                 height = ctaHeight(),
                 interactionSource = press,
+                tonal = true,
             )
             Spacer(Modifier.height(8.dp))
             SizedButton(

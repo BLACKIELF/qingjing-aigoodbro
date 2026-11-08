@@ -3,6 +3,8 @@
 package com.ahuamiao.adcleaner.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -50,6 +53,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.ahuamiao.adcleaner.R
@@ -69,6 +74,7 @@ fun SheetHost(model: AppModel) {
             when (sheet) {
                 is Sheet.More -> MoreSheet(model)
                 is Sheet.About -> AboutSheet(model)
+                is Sheet.Support -> SupportSheet()
                 is Sheet.Restore -> RestoreSheet(model)
                 is Sheet.Feedback -> FeedbackSheet(model, sheet)
                 is Sheet.Report -> ReportSheet(model, sheet.payload)
@@ -103,7 +109,7 @@ private fun SheetTitle(text: String) {
 @Composable
 private fun MoreSheet(model: AppModel) {
     val newer = model.newVersion
-    val rows = if (newer != null) 5 else 4
+    val rows = if (newer != null) 6 else 5
     var i = 0
     SheetBody {
         Segments {
@@ -125,6 +131,11 @@ private fun MoreSheet(model: AppModel) {
                 shapes = ListItemDefaults.segmentedShapes(i++, rows),
                 leadingContent = { Glyph(R.drawable.ic_chat_bubble) },
             ) { Text("反馈问题") }
+            SegmentedListItem(
+                onClick = { model.sheet = Sheet.Support },
+                shapes = ListItemDefaults.segmentedShapes(i++, rows),
+                leadingContent = { Glyph(R.drawable.ic_chat_bubble) },
+            ) { Text("企业微信支持") }
             SegmentedListItem(
                 onClick = { model.openUrl(GUIDE_URL) },
                 shapes = ListItemDefaults.segmentedShapes(i++, rows),
@@ -155,6 +166,9 @@ private fun AboutSheet(model: AppModel) {
     val license = remember(context) {
         context.assets.open("aac/legal/LICENSE").bufferedReader().use { it.readText() }
     }
+    val uiLicense = remember(context) {
+        context.assets.open("aac/legal/AiGoodBro-UI-MIT.txt").bufferedReader().use { it.readText() }
+    }
     SheetBody(Modifier.verticalScroll(rememberScrollState())) {
         SheetTitle("清静 · AiGoodBro")
         Text("版本 ${model.version} · 安卓版", style = MaterialTheme.typography.bodyMedium)
@@ -184,11 +198,32 @@ private fun AboutSheet(model: AppModel) {
             )
         }
         Spacer(Modifier.height(12.dp))
+        Text("AiGoodBro 界面 MIT 许可证", style = MaterialTheme.typography.titleMediumEmphasized)
+        SelectionContainer {
+            Text(uiLicense, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(top = 8.dp))
+        }
+        TextButton(onClick = { model.sheet = Sheet.Support }) { Text("企业微信支持") }
+        Spacer(Modifier.height(12.dp))
         Text(
             "界面使用 AndroidX / Material；无线调试组件 libadb-android 按 Apache-2.0 许可使用，Shizuku API 与相关依赖保留各自开源许可。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun SupportSheet() {
+    val context = LocalContext.current
+    val qr = remember(context) {
+        context.assets.open("aac/support/wechat-contact.png").use { BitmapFactory.decodeStream(it).asImageBitmap() }
+    }
+    SheetBody(Modifier.verticalScroll(rememberScrollState())) {
+        SheetTitle("企业微信支持")
+        Text("请使用微信扫一扫，手动添加企业微信。", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(16.dp))
+        Image(qr, contentDescription = "企业微信支持二维码", contentScale = ContentScale.Fit,
+            modifier = Modifier.align(Alignment.CenterHorizontally).fillMaxWidth().sizeIn(maxWidth = 320.dp))
     }
 }
 
@@ -266,6 +301,7 @@ private fun FeedbackSheet(model: AppModel, sheet: Sheet.Feedback) {
             .verticalScroll(rememberScrollState()),
     ) {
         SheetTitle("反馈问题")
+        TextButton(onClick = { model.sheet = Sheet.Support }) { Text("企业微信支持") }
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),

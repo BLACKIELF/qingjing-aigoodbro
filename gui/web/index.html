@@ -271,7 +271,8 @@ async function showDetect(){
     ${st.recipe && !st.recipe_ref ? "" : `<div class="note info" style="margin-top:14px">这个型号还没有机型脚本：营销通知、快应用、广告组件可以自动处理；各 App 里的广告开关要照<a href="#" onclick="openChecklist();return false">${esc(checklistName(i.brand))}手动清单</a>关${st.recipe_ref ? `，也可以在下一步试用同品牌别的机型录的参考脚本` : ""}。</div>`}
     ${st.recipe && !st.recipe_ref && !st.recipe_ok ? `<div class="note warn" style="margin-top:14px">机型脚本是按 ${esc(st.recipe_build)} 录的，这台是 ${esc(i.os || i.build)}。会用安全模式跑：只关脚本里点名的开关，找不到入口的步骤跳过，不会乱点。</div>` : ""}
     <div class="actions"><button class="btn plain" onclick="showConnect()">换一台</button><button class="btn plain" onclick="showDetect()">重新检测</button>
-    <button class="btn" ${st.locked || foldBlock || st.input_blocked ? "disabled" : ""} onclick="showChoose()">下一步</button></div>`;
+    <button class="btn ghost" ${st.locked || foldBlock || st.input_blocked ? "disabled" : ""} onclick="showChoose()">手动选择</button>
+    <button class="btn" ${st.locked || foldBlock || st.input_blocked ? "disabled" : ""} onclick="askSuperClean()">超级清静</button></div>`;
 }
 
 const CHECKLIST = {OPPO: "OPPO-ColorOS.md", ONEPLUS: "OPPO-ColorOS.md", REALME: "OPPO-ColorOS.md", HONOR: "荣耀-MagicOS.md",
@@ -372,6 +373,27 @@ async function go(){
   const r = await api.start(S.serial, plan);
   if (r.error){ modal(`<h3>没法开始</h3><p>${esc(r.error)}</p><div class="actions"><button class="btn" onclick="closeModal()">好</button></div>`); return; }
   S.plan = plan; S.logNext = 0; S.cleanupRun = {eligible: true, opened: false}; showRun();
+}
+function askSuperClean(){
+  modal(`<h3>开始超级清静？</h3><p class="lead">自动处理已适配的广告开关、明确的营销通知、可关闭的快应用和已识别的广告组件。开始前会备份，服务通知和受保护的组件会保留。</p><div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="runSuperClean(this)">开始清理</button></div>`);
+}
+async function runSuperClean(button){
+  button.disabled = true;
+  button.textContent = "正在检测并扫描…";
+  let result;
+  try {
+    result = await api.super_clean(S.serial);
+  } catch (error) {
+    result = {error: String(error)};
+  }
+  if (result.error){
+    modal(`<h3>无法开始清理</h3><p>${esc(result.error)}</p><div class="actions"><button class="btn" onclick="closeModal()">关闭</button></div>`);
+    return;
+  }
+  closeModal();
+  S.logNext = 0;
+  S.cleanupRun = {eligible: true, opened: false};
+  showRun();
 }
 function showRun(){
   setStep(4);

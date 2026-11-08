@@ -53,24 +53,24 @@ class MainActivity : ComponentActivity(), HostActions {
 
     override fun onStart() {
         super.onStart()
-        app.model.setForeground(true)
     }
 
     override fun onResume() {
         super.onResume()
         current = this
         Native.foreground(true)
+        app.model.setForeground(true)
         app.model.start()
     }
 
     override fun onPause() {
+        app.model.setForeground(false)
         if (current === this) current = null
         Native.foreground(false)
         super.onPause()
     }
 
     override fun onStop() {
-        app.model.setForeground(false)
         super.onStop()
     }
 

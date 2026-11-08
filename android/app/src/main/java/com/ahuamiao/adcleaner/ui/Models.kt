@@ -72,6 +72,8 @@ data class StepResult(
     val summary: String,
     val skipped: Boolean,
     val stopped: Boolean,
+    val kind: String = "",
+    val tail: List<String> = emptyList(),
 ) {
     companion object {
         fun parse(o: JSONObject) = StepResult(
@@ -81,6 +83,8 @@ data class StepResult(
             summary = o.text("summary"),
             skipped = o.optBoolean("skipped"),
             stopped = o.optBoolean("stopped"),
+            kind = o.text("kind"),
+            tail = o.optJSONArray("tail").strings(),
         )
     }
 }

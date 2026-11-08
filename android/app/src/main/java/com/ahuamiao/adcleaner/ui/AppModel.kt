@@ -39,6 +39,7 @@ sealed interface Screen {
 sealed interface Sheet {
     data object More : Sheet
     data object About : Sheet
+    data object Support : Sheet
     data object Restore : Sheet
     data class Feedback(val kind: String, val diag: String) : Sheet
     data class Report(val payload: JSONObject) : Sheet
@@ -102,6 +103,8 @@ class AppModel(
     var visible by mutableStateOf(true)
         private set
 
+    private var pendingWebsite = false
+    private var userRun = false
     private var booted = false
     private var stallNoticed = false
     /** 通知栏上那条首次设置指引；null 表示没有。只在真的变了才重新通知（#646）。 */
@@ -132,7 +135,7 @@ class AppModel(
             launch { loadExtras() }
             // 执行期间界面可能被系统回收：重新打开时后台的执行还在跑，接回执行页
             val run = runCatching { poll(0) }.getOrNull()
-            if (run != null && run.running) follow() else refresh()
+            if (run != null && run.running) { userRun = backend === engine; follow() } else refresh()
         }
     }
 
@@ -155,6 +158,10 @@ class AppModel(
     fun setForeground(on: Boolean) {
         visible = on
         syncSetupNotice()
+        if (on && pendingWebsite) {
+            pendingWebsite = false
+            openUrl("https://aigoodbro.com")
+        }
     }
 
     /**
@@ -214,7 +221,7 @@ class AppModel(
         device = Device.parse(dev)
         // 引擎在跑（比如进程没死、界面被回收过）：回执行页，不能让用户在首页再点一次开始
         if (runCatching { poll(0).running }.getOrDefault(false)) {
-            flow { follow() }
+            flow { userRun = backend === engine; follow() }
             return
         }
         show(Screen.Home)
@@ -233,6 +240,41 @@ class AppModel(
         show(Screen.Prepare(1))
         scan(serial, selection)
         show(Screen.Choose)
+    }
+
+    /** 用户先确认范围，之后只自动选引擎已判定安全的项目。 */
+    fun confirmSuperClean() {
+        notice = Notice(
+            "超级清静",
+            "将检测并关闭支持的广告和推荐开关、明确的营销通知，挂起已识别的广告组件并关闭可处理的快应用。快应用可能影响你常用的入口；系统服务保留项不会挂起。开始前会保存快照，改动可从「还原」恢复。仅自动运行机型和系统版本均匹配的脚本。",
+            confirm = "开始超级清静", onConfirm = { superClean() }, dismiss = "取消",
+        )
+    }
+
+    private fun superClean() = flow {
+        val serial = device?.serial ?: return@flow
+        show(Screen.Prepare(0))
+        val selected = detect(serial) ?: return@flow goHome()
+        if (selected.detection.blocked) {
+            val reason = selected.detection.warnings.joinToString("\n").ifEmpty { "请先解锁手机并处理检测提示。" }
+            goHome()
+            notice = Notice("暂时无法开始", reason)
+            return@flow
+        }
+        show(Screen.Prepare(1))
+        // 一旦交给引擎不可取消：它可能已启动执行，界面必须继续跟踪。
+        val result = withContext(NonCancellable) {
+            runCatching { backend.call("super_clean", serial) as JSONObject }
+        }
+        val error = result.fold({ if (it.has("error")) it.optString("error") else null }, { it.message.orEmpty() })
+        if (error != null) {
+            if (runCatching { poll(0).running }.getOrDefault(false)) return@flow follow()
+            goHome()
+            notice = Notice("无法开始超级清静", error)
+            return@flow
+        }
+        userRun = true
+        follow()
     }
 
     /**
@@ -304,6 +346,7 @@ class AppModel(
             if (selection == null) goHome() else show(Screen.Choose)
             return
         }
+        userRun = true
         follow()
     }
 
@@ -332,6 +375,19 @@ class AppModel(
             if (run.finished) {
                 mode.cancel()
                 show(Screen.Done(run))
+                if (userRun && run.outcome == Outcome.Ok && !run.cancel && run.results.all { it.ok && !it.stopped } && run.results.any { result ->
+                    !result.skipped && when (result.kind) {
+                        "recipe" -> Regex("关了 ([1-9]\\d*) 个开关").containsMatchIn(result.summary)
+                        "channels" -> Regex("关了 ([1-9]\\d*) 个渠道").containsMatchIn(result.summary)
+                        "ads" -> result.tail.any { "：已挂起" in it }
+                        "quickapp" -> true
+                        else -> false
+                    }
+                }) {
+                    pendingWebsite = true
+                    if (visible) { pendingWebsite = false; openUrl("https://aigoodbro.com") }
+                }
+                userRun = false
                 return@coroutineScope
             }
             // 没在跑、又没有结果：这次执行根本没起来（比如进程重启过），别一直停在执行页
@@ -396,6 +452,7 @@ class AppModel(
             notice = Notice("没法重试", o.optString("error"))
             return@flow
         }
+        userRun = true
         follow()
     }
 

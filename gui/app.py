@@ -14,7 +14,7 @@ except ImportError:
     import winpreflight
 
 APP_NAME = "清静 · AiGoodBro"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 FROZEN = getattr(sys, "frozen", False)
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(BASE, "tool")
@@ -1184,7 +1184,7 @@ class Api:
             license_text = license_file.read_text(encoding="utf-8")
         except OSError:
             license_text = "未找到随附的 MIT 许可文件，请查看本项目源码中的 LICENSE。"
-        return {"name": APP_NAME, "version": VERSION, "build": "1108v1",
+        return {"name": APP_NAME, "version": VERSION, "build": "1108v2",
                 "author": "AiGoodBro",
                 "upstream_author": "肉呆大魔王（rddmwmddr）",
                 "upstream_url": "https://github.com/rddmwmddr/android-ad-cleaner",
@@ -1381,6 +1381,37 @@ class Api:
     # ----- 任务 -----
     def start(self, serial, plan):
         return self.dispatcher.start(serial, plan, self._offered())
+
+    def super_clean(self, serial):
+        """重新检测同一台手机，按安全默认项自动生成清理计划。"""
+        if self._job_running():
+            return {"error": "已有任务在运行"}
+        status = self.status(serial)
+        if status.get("error") or not status.get("info"):
+            return {"error": status.get("error") or "无法确认手机状态，请重新连接"}
+        if status.get("locked") or status.get("input_blocked"):
+            return {"error": "请解锁手机并确认 USB 调试权限后再试"}
+        scan = self.chan_scan(serial)
+        if scan.get("error"):
+            return scan
+        steps = status.get("steps") or []
+        exact = status.get("recipe_ok") and not status.get("recipe_ref") and not status.get("fold_open")
+        quickapps = status.get("quickapps") or []
+        ads = status.get("ads") or []
+        channels = scan.get("chans") or []
+        plan = {
+            "backup": True,
+            "model": status["info"].get("model", ""),
+            "steps": steps if exact else [],
+            "channels": [channel for channel in channels if channel.get("checked")],
+            "quickapp": any(not (app.get("closed") or app.get("keep")) for app in quickapps),
+            "ads": [ad["pkg"] for ad in ads if not ad.get("suspended")],
+        }
+        if not any(plan[key] for key in ("steps", "channels", "quickapp", "ads")):
+            return {"error": "这台手机当前没有可自动处理的广告项"}
+        offered = {"steps": steps if exact else [], "channels": channels,
+                   "quickapps": quickapps, "ads": ads}
+        return self.dispatcher.start(serial, plan, offered)
 
     def retry(self):
         """把上一轮没做成的步骤再跑一遍（#638）。结果按步骤合并，快照成功过就绝不再存。

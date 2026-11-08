@@ -16,6 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.lightColorScheme
 
 /** 用户在系统里关了动画：形状不再持续旋转，其余动效由 Compose 按系统比例缩短。 */
 val LocalReduceMotion = staticCompositionLocalOf { false }
@@ -46,11 +48,17 @@ private val AacTypography = Typography().run {
 fun AacTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
-    val colors = when {
-        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> darkColorScheme()
-        else -> expressiveLightColorScheme()
-    }
+    val colors = if (dark) darkColorScheme(
+        primary = Color(0xFF9AB4FF), onPrimary = Color(0xFF002B84),
+        primaryContainer = Color(0xFF1648B9), onPrimaryContainer = Color.White,
+        background = Color(0xFF13141A), surface = Color(0xFF13141A),
+        surfaceContainer = Color(0xFF1E2028), surfaceContainerHigh = Color(0xFF292B34),
+    ) else lightColorScheme(
+        primary = Color(0xFF2866F7), onPrimary = Color.White,
+        primaryContainer = Color(0xFFDDE6FF), onPrimaryContainer = Color(0xFF102F7A),
+        background = Color(0xFFF4F5F9), surface = Color(0xFFF4F5F9),
+        surfaceContainer = Color.White, surfaceContainerHigh = Color(0xFFE9ECF4),
+    )
     val reduce = remember {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
