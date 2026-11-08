@@ -7,9 +7,9 @@ jobs:
   assemble:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    env:
-      QINGJING_ANDROID_BUILD_DIR: ${{ runner.temp }}/qingjing-android/app
     steps:
+      - name: Set isolated build output
+        run: echo "QINGJING_ANDROID_BUILD_DIR=$RUNNER_TEMP/qingjing-android/app" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v6
         with:

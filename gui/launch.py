@@ -78,8 +78,23 @@ def smoke_gui(window, result):
                 })()""")
                 if not hint_ok:
                     raise RuntimeError("读屏冲突排查提示未显示")
+                window.evaluate_js("openAbout(); true")
+                about_deadline = time.monotonic() + 10
+                while time.monotonic() < about_deadline:
+                    about_ok = window.evaluate_js("""(() => {
+                        const box = document.querySelector('#modalbox');
+                        return box && box.textContent.includes('AiGoodBro') &&
+                            box.textContent.includes('肉呆大魔王') &&
+                            box.textContent.includes('Guomeiqing') &&
+                            box.textContent.includes('Permission is hereby granted');
+                    })()""")
+                    if about_ok:
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise RuntimeError("关于页或随包开源许可未正确加载")
                 result["ok"] = True
-                print("GUI smoke: file 页面、教程图片、JS API 桥、读屏失败排查提示通过；未启动 HTTP 服务", flush=True)
+                print("GUI smoke: file 页面、教程图片、本地接口、失败提示及关于/完整开源许可通过；未连接手机", flush=True)
                 return
             time.sleep(0.1)
         raise RuntimeError("教程图片或 JS API 调用未通过")

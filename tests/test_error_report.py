@@ -96,6 +96,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("肉呆大魔王", info["upstream_author"])
         self.assertEqual(info["license"], (ROOT / "LICENSE").read_text(encoding="utf-8"))
         self.assertEqual(info["project_url"], "https://github.com/BLACKIELF/qingjing-aigoodbro")
+        self.assertEqual(info["ui_license"], (ROOT / "licenses/AiGoodBro-UI-MIT.txt").read_text(encoding="utf-8"))
         network.assert_not_called()
 
 

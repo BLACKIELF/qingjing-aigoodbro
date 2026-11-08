@@ -1189,7 +1189,8 @@ class Api:
                 "upstream_author": "肉呆大魔王（rddmwmddr）",
                 "upstream_url": "https://github.com/rddmwmddr/android-ad-cleaner",
                 "project_url": "https://github.com/BLACKIELF/qingjing-aigoodbro",
-                "license": license_text}
+                "license": license_text,
+                "ui_license": Path(BASE, "licenses", "AiGoodBro-UI-MIT.txt").read_text(encoding="utf-8")}
 
     def latest_version(self):
         """有新版时返回 {version, url}，没有或查不到返回 {}。旧版不会自动更新：0.2.6 发布后，
