@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /**
  * 只在 debug 构建里：不连手机、不跑引擎，逐屏验收界面。
- * `adb shell am start -n com.ahuamiao.adcleaner/.MainActivity --es demo home [--es sheet more]`
+ * `adb shell am start -n com.aigoodbro.qingjing/com.ahuamiao.adcleaner.MainActivity --es demo home [--es sheet more]`
  * 页面：setup1 setup2 setup3 setup3mi old stopped-sh ask denied nodev home prepare0 prepare1 choose
  * blocked norecipe scanfail run paused pausing stalled fgmode stopping done failed stopped failed2
  * 面板：more newer restore restored feedback report log；对话框：devoff
@@ -74,6 +74,7 @@ object Demo {
         model.sheet = null
         when (sheet) {
             "more", "newer" -> model.sheet = Sheet.More
+            "about" -> model.sheet = Sheet.About
             "restore" -> model.openRestore()
             "restored" -> {
                 model.openRestore()

@@ -3,11 +3,11 @@
 #   gui/build_mac.sh                      Apple 芯片版，不签名（自己测）
 #   ARCH=x86_64 gui/build_mac.sh          Intel 版（在 Apple 芯片的 Mac 上要装 Rosetta）
 #   SIGN_ID="Developer ID Application: 名字 (TEAMID)" NOTARY_PROFILE=钥匙串公证配置名 gui/build_mac.sh
-# 产物：gui/dist/<架构>/肉呆去广告.app、gui/dist/AndroidAdCleaner-<版本>-mac-<arm64|intel>.dmg
+# 产物：gui/dist/<架构>/清静 · AiGoodBro.app、gui/dist/AndroidAdCleaner-<版本>-mac-<arm64|intel>.dmg
 set -eo pipefail
 cd "${0:A:h}/.."
 ARCH=${ARCH:-arm64}
-NAME="肉呆去广告"
+NAME="清静 · AiGoodBro"
 if [ "$ARCH" = "x86_64" ]; then
   VENV=gui/.venv-x86; RUN=(arch -x86_64); TAG=intel; PYVER=cpython-3.12-macos-x86_64
 else
@@ -29,9 +29,9 @@ DATA="$PWD/gui/build/$ARCH/data"
 $PY gui/bundle_data.py "$DATA"
 $RUN $PY -m PyInstaller --noconfirm --windowed --name "$NAME" \
   --distpath $OUT --workpath gui/build/$ARCH --specpath gui/build/$ARCH \
-  --osx-bundle-identifier com.rddmwmddr.androidadcleaner \
+  --osx-bundle-identifier com.aigoodbro.qingjing \
   --icon "$PWD/gui/icon.icns" \
-  --add-data "$DATA/tool:tool" --add-data "$DATA/recipes:recipes" \
+  --add-data "$DATA/LICENSE:." --add-data "$DATA/tool:tool" --add-data "$DATA/recipes:recipes" \
   --add-data "$DATA/images:images" --add-data "$DATA/gui/web:gui/web" \
   --collect-all uiautomator2 --collect-all adbutils \
   --hidden-import uiautomator2 --hidden-import adbutils --hidden-import PIL --hidden-import fcntl \
@@ -46,6 +46,12 @@ NEWER=$(find "$APP" -type f \( -name "*.so" -o -name "*.dylib" -o -perm +111 \) 
         awk '/^[^ ].*:$/{f=$0} /LC_VERSION_MIN_MACOSX/{vm=1} /minos/ || (vm && /^ *version/){vm=0; split($2,v,"."); if (v[1]+0 > 11) print f, $2}' | sort -u)
 if [ -n "$NEWER" ]; then echo "以下文件要求高于 macOS 11：\n$NEWER" >&2; exit 1; fi
 echo "架构：$(file "$APP/Contents/MacOS/$NAME" | sed 's/.*: //')"
+
+# PyInstaller 的临时签名先于版本写入；修改 Info.plist 后必须重签。
+if [ -z "$SIGN_ID" ]; then
+  codesign --force --deep --sign - "$APP"
+  codesign --verify --deep --strict "$APP"
+fi
 
 if [ -n "$SIGN_ID" ]; then
   codesign --force --deep --options runtime --timestamp --sign "$SIGN_ID" "$APP"
@@ -62,7 +68,7 @@ if [ -n "$SIGN_ID" ]; then
   fi
 fi
 
-DMG="gui/dist/AndroidAdCleaner-$VER-mac-$TAG.dmg"
+DMG="gui/dist/Qingjing-AiGoodBro-$VER-1108v1-mac-$TAG.dmg"
 rm -f "$DMG"
 STAGE="gui/build/$ARCH/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/应用程序"

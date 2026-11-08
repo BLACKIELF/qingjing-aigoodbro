@@ -23,7 +23,7 @@ USAGE = """\
   aac-cli --cli run.py devices              列出已连接的手机
   aac-cli --cli run.py -s <序列号> check     检测指定手机
 
-要打开窗口请运行 AndroidAdCleaner。
+要打开窗口请运行 清静 · AiGoodBro。
 """
 
 

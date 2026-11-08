@@ -33,6 +33,8 @@ class TextModeTests(unittest.TestCase):
         offenders = []
         for folder in ("tool", "gui", "tests"):
             for path in sorted((ROOT / folder).rglob("*.py")):
+                if any(part in {".venv", "build", "dist"} for part in path.relative_to(ROOT).parts):
+                    continue
                 for line in missing_decoder(path.read_text(encoding="utf-8")):
                     offenders.append(f"{path.relative_to(ROOT).as_posix()}:{line}")
         self.assertEqual(offenders, [])

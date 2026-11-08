@@ -72,7 +72,7 @@ class Session:
             try:
                 self.background = BACKGROUND and screen.start(package) is not None
                 native.busy(True, self.background)
-                visible(package, True, f"肉呆{action}中（后台）" if self.background else f"肉呆{action}中")
+                visible(package, True, f"清静{action}中（后台）" if self.background else f"清静{action}中")
             except BaseException:
                 # 半路失败不能把计数留在 1：之后每次执行都会走 count > 1 的早退分支，保活与胶囊就再也不开了
                 self.count -= 1
@@ -127,13 +127,13 @@ def in_front(fn, package, action, stopped=None):
                 if bg:
                     native.done(title, text)
                 else:
-                    r = bridge.get().exec(f"am start -n {package}/.MainActivity", None, 10)
+                    r = bridge.get().exec(f"am start -n {package}/com.ahuamiao.adcleaner.MainActivity", None, 10)
                     if r.code:
                         native.bringToFront()
     return run
 
 
-def boot(base, data_dir, cache_dir, package="com.ahuamiao.adcleaner"):
+def boot(base, data_dir, cache_dir, package="com.aigoodbro.qingjing"):
     """base：解出来的 aac/（tool、recipes、gui、images）；data_dir：备份与设置。"""
     global API
     os.environ.setdefault("HOME", data_dir)

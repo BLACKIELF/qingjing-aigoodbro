@@ -388,9 +388,9 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(api.latest_version(), {"version": "9.9.9", "url": self.app.DOWNLOAD_PAGE})
         with patch.object(self.app.urllib.request, "urlopen", return_value=Reply(json.dumps({"version": self.app.VERSION}).encode())):
             self.assertEqual(api.latest_version(), {})
-        # 官网的版本文件取不到：退到 GitHub 的 tag_name
+        # 从本分支 GitHub Release 读取 tag_name
         with patch.object(self.app.urllib.request, "urlopen",
-                          side_effect=[OSError("timeout"), Reply(json.dumps({"tag_name": "v9.9.10"}).encode())]):
+                          return_value=Reply(json.dumps({"tag_name": "v9.9.10"}).encode())):
             self.assertEqual(api.latest_version()["version"], "9.9.10")
         with patch.object(self.app.urllib.request, "urlopen", side_effect=OSError("offline")):
             self.assertEqual(api.latest_version(), {})

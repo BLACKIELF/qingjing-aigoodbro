@@ -38,6 +38,7 @@ sealed interface Screen {
 
 sealed interface Sheet {
     data object More : Sheet
+    data object About : Sheet
     data object Restore : Sheet
     data class Feedback(val kind: String, val diag: String) : Sheet
     data class Report(val payload: JSONObject) : Sheet
@@ -504,13 +505,13 @@ class AppModel(
             val payload = try {
                 backend.call("report_payload") as JSONObject
             } catch (e: EngineError) {
-                notice = Notice("上报错误日志", e.message.orEmpty())
+                notice = Notice("读取错误日志", e.message.orEmpty())
                 return@launch
             }
             val empty = (payload.optJSONArray("steps")?.length() ?: 0) == 0 && payload.optString("log").isBlank()
             if (empty) {        // 没执行过：只有手机型号，看不出问题（10-28 六份空报告）
                 sheet = null
-                notice = Notice("还没有执行记录", "这份报告只有手机型号，看不出问题。先执行一次再上报；还没执行就遇到问题，到 GitHub 反馈。",
+                notice = Notice("还没有执行记录", "这份报告只有手机型号，看不出问题。先执行一次再复制日志；还没执行就遇到问题，可以到 GitHub 反馈。",
                     confirm = "到 GitHub 反馈", onConfirm = { openFeedback() }, dismiss = "关闭")
             } else {
                 sheet = Sheet.Report(payload)
@@ -518,16 +519,12 @@ class AppModel(
         }
     }
 
-    /** 回调给面板：发送结果的文字、是否成功。 */
-    fun sendReport(payload: JSONObject, done: (String, Boolean) -> Unit) {
+    /** 仅复制到本机剪贴板，不向任何服务器发送。 */
+    fun copyReport(payload: JSONObject, done: (String, Boolean) -> Unit) {
         scope.launch {
             try {
-                val r = backend.call("send_report", payload) as JSONObject
-                when {
-                    r.has("error") -> done(r.optString("error"), false)
-                    r.optBoolean("duplicate") -> done("这份日志一小时内上报过，不用重复发送。", true)
-                    else -> done("上报成功。报告编号 ${r.opt("id")}；要删除这份记录，到 GitHub 提 Issue 附上编号。", true)
-                }
+                val copied = backend.call("copy_text", payload.toString(2)) as? Boolean == true
+                done(if (copied) "日志已复制，请自行选择分享位置。" else "复制失败，请重试。", copied)
             } catch (e: EngineError) {
                 done(e.message.orEmpty(), false)
             }

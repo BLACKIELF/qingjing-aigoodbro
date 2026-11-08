@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""肉呆去广告 · 桌面客户端（macOS / Windows）。
+"""清静 · AiGoodBro · 桌面客户端（macOS / Windows）。
 
 界面：gui/web/index.html（pywebview 窗口）
 后台：tool/run.py、tool/fast.py、tool/chan_fast.py，以子进程运行，日志实时回传界面。
@@ -13,8 +13,8 @@ try:                                # 当包导入（测试）；直接跑脚本
 except ImportError:
     import winpreflight
 
-APP_NAME = "肉呆去广告"
-VERSION = "0.4.0"
+APP_NAME = "清静 · AiGoodBro"
+VERSION = "1.0.0"
 FROZEN = getattr(sys, "frozen", False)
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(BASE, "tool")
@@ -33,10 +33,10 @@ def _tool(name):
 
 def data_dir():
     if IS_WIN:
-        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "AndroidAdCleaner")
+        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "QingjingAiGoodBro")
     if platform.system() == "Darwin":
-        return os.path.expanduser("~/Library/Application Support/AndroidAdCleaner")
-    return os.path.expanduser("~/.local/share/android-ad-cleaner")
+        return os.path.expanduser("~/Library/Application Support/QingjingAiGoodBro")
+    return os.path.expanduser("~/.local/share/qingjing-aigoodbro")
 
 
 class ClientData:
@@ -678,12 +678,11 @@ def win_clipboard(text):
 
 
 # 错误日志上报：用户预览并确认后发送；说明见 docs/12-错误日志上报.md
-REPORT_URL = "https://supabase.ahuamiao.com/functions/v1/aac-report"
+REPORT_URL = ""  # 本分支只预览/复制诊断，不向上游服务器发送日志。
 REPORT_LIMIT = 3            # 每小时最多上报几次（服务器另有按 IP / 安装编号 / 全站的配额）
 # 新版本提示：先查官网的版本文件（国内能访问），再查 GitHub。只取版本号，请求里不带手机、电脑信息。
-LATEST_URLS = ("https://ahuamiao.com/sites/other/android-ad-cleaner-latest.json",
-               "https://api.github.com/repos/rddmwmddr/android-ad-cleaner/releases/latest")
-DOWNLOAD_PAGE = "https://ahuamiao.com/sites/other/android-ad-removal-intro.html"
+LATEST_URLS = ("https://api.github.com/repos/BLACKIELF/qingjing-aigoodbro/releases/latest",)
+DOWNLOAD_PAGE = "https://github.com/BLACKIELF/qingjing-aigoodbro/releases/latest"
 # 断线后跳过后面各步时写给用户的话；手机版没有电脑，启动时换成自己的说法（aac_android.main.boot，#729）
 LINK_LOST = "手机和电脑已断开，这一步没有执行。重新连接手机后点「重试」。"
 # 诊断里「点击被拒」那一栏：手机版会整段复制与上报，不能写「电脑」（aac_android.main.boot，#747）
@@ -861,38 +860,12 @@ class Reporter:
         return value
 
     def send_report(self, payload):
-        now = time.time()
-        self.report_times = [t for t in self.report_times if now - t < 3600]
-        if len(self.report_times) >= REPORT_LIMIT:
-            return {"error": f"一小时内最多上报 {REPORT_LIMIT} 次，请稍后再试"}
         if not isinstance(payload, dict):
             return {"error": "上报内容格式不对"}
         if not payload.get("steps") and not str(payload.get("log") or "").strip():
             return {"error": EMPTY_REPORT}
-        body = dict(payload, install_id=self._install_id())
-        request = urllib.request.Request(
-            REPORT_URL, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), method="POST",
-            headers={"Content-Type": "application/json", "User-Agent": f"AndroidAdCleaner/{VERSION}"})
-        try:
-            # 云函数闲置后第一次调用要加载依赖，给足时间
-            with urllib.request.urlopen(request, timeout=45) as response:
-                result = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                return {"error": "上报太频繁，请一小时后再试"}
-            try:
-                message = json.loads(e.read().decode("utf-8")).get("message") or ""
-            except (ValueError, OSError):
-                message = ""
-            return {"error": f"服务器拒绝了这次上报（{e.code}{'：' + message if message else ''}）"}
-        except (urllib.error.URLError, OSError, ValueError) as e:
-            return {"error": f"连不上上报服务器：{getattr(e, 'reason', e)}"}
-        self.report_times.append(now)
-        if result.get("status") == "duplicate":
-            return {"ok": True, "duplicate": True}
-        if result.get("status") != "ok":
-            return {"error": "服务器没有确认收到"}
-        return {"ok": True, "id": result.get("id", "")}
+        return {"error": "本版本不联网发送日志。请复制诊断，检查后自行提交到本项目的 GitHub。"}
+
 
 
 class Dispatcher:
@@ -1203,6 +1176,20 @@ class Api:
     def env(self):
         return {"adb": self.adb, "data": self.data.root, "version": VERSION, "os": platform.system(),
                 "images": [f for f in sorted(os.listdir(os.path.join(BASE, "images"))) if f.startswith("dev-")]}
+
+    def about(self):
+        """本地版权说明；打包时随附原始 MIT 许可，不请求网络。"""
+        license_file = Path(BASE, "LICENSE")
+        try:
+            license_text = license_file.read_text(encoding="utf-8")
+        except OSError:
+            license_text = "未找到随附的 MIT 许可文件，请查看本项目源码中的 LICENSE。"
+        return {"name": APP_NAME, "version": VERSION, "build": "1108v1",
+                "author": "AiGoodBro",
+                "upstream_author": "肉呆大魔王（rddmwmddr）",
+                "upstream_url": "https://github.com/rddmwmddr/android-ad-cleaner",
+                "project_url": "https://github.com/BLACKIELF/qingjing-aigoodbro",
+                "license": license_text}
 
     def latest_version(self):
         """有新版时返回 {version, url}，没有或查不到返回 {}。旧版不会自动更新：0.2.6 发布后，
@@ -1672,13 +1659,13 @@ def _attribution(state, blocked, error, rejected):
             "如果这是 Windows 10 且从没装过，先装一个再试：\n"
             "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
             "装过还这样，把括号里的原文发到 "
-            "https://github.com/rddmwmddr/android-ad-cleaner/issues/new 。\n\n"
+            "https://github.com/BLACKIELF/qingjing-aigoodbro/issues/new 。\n\n"
             f"（{error}）", False)
     return (
         "程序启动失败。WebView2 运行时在，程序文件也没有被 Windows 锁定，"
         "是按别的原因退出的。\n\n"
         "把下面括号里的原文发到 "
-        "https://github.com/rddmwmddr/android-ad-cleaner/issues/new ，我们按它定位。\n\n"
+        "https://github.com/BLACKIELF/qingjing-aigoodbro/issues/new ，我们按它定位。\n\n"
         f"（{error}）", False)
 
 

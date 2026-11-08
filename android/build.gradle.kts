@@ -3,5 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.3.21" apply false
     id("com.chaquo.python") version "17.2.0" apply false
 }
-// 构建目录放在 ~/Library/Caches：仓库可能在同步盘里，避免产生冲突副本
-layout.buildDirectory.set(file(System.getProperty("user.home") + "/Library/Caches/aac-android/root"))
+// 构建目录放在源码树之外，避免同步冲突与将产物提交进仓库。
+val appBuildDir = System.getenv("QINGJING_ANDROID_BUILD_DIR")
+    ?: java.io.File(System.getProperty("user.home"), ".cache/qingjing-aigoodbro-android/app").path
+layout.buildDirectory.set(file(appBuildDir).resolveSibling("root"))

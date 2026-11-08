@@ -40,7 +40,7 @@ object Native {
     @JvmStatic
     fun copy(text: String) = main.post {
         val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("肉呆去广告", text))
+        cm.setPrimaryClip(ClipData.newPlainText("清静 · AiGoodBro", text))
         Toast.makeText(app, "已复制", Toast.LENGTH_SHORT).show()
     }
 
@@ -51,7 +51,7 @@ object Native {
     @JvmStatic
     fun setClipboard(text: String) {
         val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("肉呆去广告", text))
+        cm.setPrimaryClip(ClipData.newPlainText("清静 · AiGoodBro", text))
     }
 
     @JvmStatic
@@ -127,7 +127,7 @@ object Native {
         if (!on || !Settings.canDrawOverlays(app)) return@post
         val dp = app.resources.displayMetrics.density
         val view = TextView(app).apply {
-            text = label.ifEmpty { "肉呆去广告中" }
+            text = label.ifEmpty { "清静 · AiGoodBro中" }
             textSize = 11f
             setTextColor(0xFFFFFFFF.toInt())
             setPadding((8 * dp).toInt(), (5 * dp).toInt(), (10 * dp).toInt(), (5 * dp).toInt())

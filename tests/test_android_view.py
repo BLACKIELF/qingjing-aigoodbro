@@ -277,7 +277,7 @@ class SetupGuideTest(unittest.TestCase):
         # 通知里别再补一层「在「关于手机」里」：tap 自带完整路径，各品牌入口还不一样
         self.assertTrue(steps[0]["notice"]["text"].startswith("连点"))
         self.assertIn("版本号", steps[0]["notice"]["text"])
-        self.assertIn("回到「肉呆去广告」", steps[1]["notice"]["text"])
+        self.assertIn("回到「清静 · AiGoodBro」", steps[1]["notice"]["text"])
         self.assertIsNone(steps[2]["notice"])     # 配对阶段的通知由 PairingService 负责
 
     def test_brand_changes_the_path_and_the_xiaomi_extra_step(self):

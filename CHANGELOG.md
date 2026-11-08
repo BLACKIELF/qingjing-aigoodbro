@@ -1,3 +1,14 @@
+# 清静 · AiGoodBro
+
+## 1.0.0 · 1108v1
+
+### 新增
+
+- Mac 与 Android 独立名称、图标、应用标识及关于许可说明（#1）。
+- 独立备份目录、更新与反馈入口，诊断改为本地预览复制（#1）。
+
+---
+
 # 更新记录
 
 每一版一条一行，面向维护者与本仓库 agent。用户看的更新说明在 [GitHub Releases](https://github.com/rddmwmddr/android-ad-cleaner/releases)；0.3.0 及更早的逐次详细记录（基线 SHA、对拍组数、逐字不变清单）见[归档记录](docs/归档/CHANGELOG-0.3.0及更早.md)。

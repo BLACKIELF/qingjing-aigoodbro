@@ -8,7 +8,10 @@ plugins {
     id("com.chaquo.python")
 }
 
-layout.buildDirectory.set(file(System.getProperty("user.home") + "/Library/Caches/aac-android/app"))
+// CI 可指定独立输出目录；本机也不向源码树写入构建产物。
+val appBuildDir = System.getenv("QINGJING_ANDROID_BUILD_DIR")
+    ?: File(System.getProperty("user.home"), ".cache/qingjing-aigoodbro-android/app").path
+layout.buildDirectory.set(file(appBuildDir))
 
 // 版本号跟桌面版同一处：gui/app.py 的 VERSION
 val repo = rootProject.file("..")
@@ -19,7 +22,7 @@ android {
     namespace = "com.ahuamiao.adcleaner"
     compileSdk = 37
     defaultConfig {
-        applicationId = "com.ahuamiao.adcleaner"
+        applicationId = "com.aigoodbro.qingjing"
         minSdk = 26
         targetSdk = 35
         versionCode = parts[0] * 10000 + parts[1] * 100 + parts[2]
@@ -75,6 +78,7 @@ val syncEngine by tasks.registering(Sync::class) {
     from(repo.resolve("tool")) { into("tool"); include("*.py", "*.dex") }
     from(repo.resolve("recipes")) { into("recipes"); include("*/recipe*.py"); exclude("zztest-*/**") }
     from(repo.resolve("gui")) { into("gui"); include("app.py", "winpreflight.py", "version.py", "web/chime.wav") }
+    from(repo.resolve("LICENSE")) { into("legal") }
     from(repo.resolve("docs/手机版教程")) { into("docs"); include("brand-taps.json") }   // 首次设置按品牌说路径
 }
 tasks.named("preBuild") { dependsOn(syncEngine) }

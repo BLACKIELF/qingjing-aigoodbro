@@ -14,5 +14,5 @@ dependencyResolutionManagement {
         maven("https://jitpack.io") { content { includeGroupByRegex("com\\.github\\.MuntashirAkon.*") } }
     }
 }
-rootProject.name = "AndroidAdCleaner"
+rootProject.name = "QingjingAiGoodBro"
 include(":app")

@@ -42,18 +42,18 @@ class ImportSideEffectTests(unittest.TestCase):
         self.assertFalse(seen["path_changed"], "import gui.app 改了 sys.path")
         self.assertEqual(seen["tool_modules"], [], "import gui.app 加载了 tool/ 下的模块")
         # 三个平台的数据目录都不许出现（子进程里的 data_dir() 走的是哪个，取决于跑测试的系统）
-        for leftover in (Path(self.home, "Library/Application Support/AndroidAdCleaner"),
-                         Path(self.home, ".local/share/android-ad-cleaner"),
-                         Path(self.dir.name, "AppData/AndroidAdCleaner")):
+        for leftover in (Path(self.home, "Library/Application Support/QingjingAiGoodBro"),
+                         Path(self.home, ".local/share/qingjing-aigoodbro"),
+                         Path(self.dir.name, "AppData/QingjingAiGoodBro")):
             self.assertFalse(leftover.exists(), f"import gui.app 建了 {leftover}")
 
-    def test_data_dir_points_at_the_same_place_as_before(self):
-        # data_dir() 只换了「建不建目录」，位置判定逐字不变
+    def test_fork_data_dir_is_separate_from_upstream(self):
+        # fork 数据隔离；不能覆盖上游的安装或备份
         seen = self.run_import()
         self.assertEqual(Path(seen["data"]), Path(
-            self.dir.name, "AppData/AndroidAdCleaner") if os.name == "nt" else
-            (Path(self.home, "Library/Application Support/AndroidAdCleaner") if sys.platform == "darwin"
-             else Path(self.home, ".local/share/android-ad-cleaner")))
+            self.dir.name, "AppData/QingjingAiGoodBro") if os.name == "nt" else
+            (Path(self.home, "Library/Application Support/QingjingAiGoodBro") if sys.platform == "darwin"
+             else Path(self.home, ".local/share/qingjing-aigoodbro")))
 
 
 if __name__ == "__main__":

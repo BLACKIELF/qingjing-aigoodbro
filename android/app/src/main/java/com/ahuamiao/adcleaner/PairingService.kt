@@ -158,7 +158,7 @@ class PairingService : Service() {
                 Log.i(TAG, "配对成功，连接${if (connected) "成功" else "未成功"}")
                 finish(if (connected) "授权完成，以后不用再做" else "授权完成")
                 // 用户还停在系统设置里：连上了就以 shell 身份把本 App 调回前台（后台服务自己起不了界面）
-                if (connected) AdbShell.exec("am start -n $packageName/.MainActivity")
+                if (connected) AdbShell.exec("am start -n $packageName/com.ahuamiao.adcleaner.MainActivity")
                 return
             }
         }
@@ -211,7 +211,7 @@ class PairingService : Service() {
         runCatching { projection?.stop() }; projection = null     // 留成 null，下一次启动才知道没有会话在跑
         if (::looper.isInitialized) looper.quitSafely()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        if (done != null) Pairing.notify(this, done, "点这里回到「肉呆去广告」开始去广告")
+        if (done != null) Pairing.notify(this, done, "点这里回到「清静 · AiGoodBro」开始去广告")
         MainActivity.refreshState()
         stopSelf()
     }

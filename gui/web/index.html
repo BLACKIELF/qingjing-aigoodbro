@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>肉呆去广告</title>
+<title>清静 · AiGoodBro</title>
 <style>
 :root{
   --bg:#f5f6f8; --panel:#ffffff; --side:#eef0f4; --text:#1d1f23; --sub:#6b7280; --line:#e3e6eb;
@@ -100,7 +100,7 @@ pre.report{background:var(--log);color:var(--logtext);font-family:var(--mono);fo
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><img src="img/logo.png" alt="">肉呆去广告</div>
+    <div class="brand"><img src="img/logo.png" alt="">清静<span style="font-size:12px;color:var(--sub)">AiGoodBro</span></div>
     <div class="step" data-s="1"><b>1</b>连接手机</div>
     <div class="step" data-s="2"><b>2</b>检测</div>
     <div class="step" data-s="3"><b>3</b>选择要关的</div>
@@ -111,7 +111,8 @@ pre.report{background:var(--log);color:var(--logtext);font-family:var(--mono);fo
       <button class="link" onclick="api.open_path('backups')">📁 打开备份文件夹</button>
       <button class="link" onclick="openSettings()">⚙ 设置</button>
       <button class="link" onclick="openFeedback()">💬 反馈问题</button>
-      <button class="link" onclick="api.open_url('https://github.com/rddmwmddr/android-ad-cleaner')">？使用说明</button>
+      <button class="link" onclick="api.open_url('https://github.com/BLACKIELF/qingjing-aigoodbro')">？使用说明</button>
+      <button class="link" onclick="openAbout()">ⓘ 关于清静</button>
       <button class="link newver hide" id="newver"></button>
       <div class="ver" id="ver"></div>
     </div>
@@ -162,9 +163,10 @@ let pollDev = null;
 function showConnect(){
   setStep(1); clearInterval(pollDev);
   main().innerHTML = `
-    <h1>连接手机</h1>
+    <h1>让手机清静一点</h1>
     <p class="lead">用数据线把手机连到这台电脑。手机要打开开发者模式和 USB 调试。</p>
     <div class="note info"><b>设备支持范围</b>：支持通过 adb 连接的安卓设备。使用 HDC 的华为原生鸿蒙暂不支持；升级客户端也不会获得鸿蒙适配。荣耀 MagicOS 属于另一种情况，可先连接检测，没有本型号脚本时可自选同品牌参考脚本。</div>
+    <div class="card"><h3>关掉这些打扰，保留正常功能</h3><p class="lead" style="margin:0">系统广告与跟踪 · 热搜资讯 · 商店推广 · 营销通知 · 快应用跳转</p><p class="lead" style="margin:8px 0 0;font-size:12px">先检测，再选择，确认后执行。具体项目以机型适配为准；第三方 App 自带的开屏广告不在范围内。</p></div>
     <div id="adbwarn"></div>
     <div id="adbbox"></div>
     <div id="devbox"></div>
@@ -269,7 +271,7 @@ const CHECKLIST_NAME = {"OPPO-ColorOS.md": "OPPO / ColorOS ", "荣耀-MagicOS.md
 function checklistName(brand){ return CHECKLIST_NAME[CHECKLIST[(brand || "").toUpperCase()]] || ""; }
 function openChecklist(){
   const f = CHECKLIST[((S.status && S.status.info.brand) || "").toUpperCase()];
-  api.open_url("https://github.com/rddmwmddr/android-ad-cleaner/blob/main/docs/" + encodeURIComponent("清单") + "/" + (f ? encodeURIComponent(f) : "README.md"));
+  api.open_url("https://github.com/BLACKIELF/qingjing-aigoodbro/blob/main/docs/" + encodeURIComponent("清单") + "/" + (f ? encodeURIComponent(f) : "README.md"));
 }
 
 /* ---------- 3 选择 ---------- */
@@ -280,7 +282,7 @@ async function showChoose(){
   const qaKeepNote = st.quickapps.some(q => q.keep)
     ? "快应用平台会保留（负一屏快递卡片等系统服务依赖它），广告仍可能通过 hap:// 跳进快应用"
     : "关闭后系统会拦截这类入口";
-  main().innerHTML = `<h1>选择要关的</h1><p class="lead">开始前会存一份改动前的快照，每一项都能在「还原改动」里恢复。</p>
+  main().innerHTML = `<h1>选择要关的</h1><p class="lead">开始前会存一份改动前的快照。营销通知、快应用和广告组件可在「还原改动」恢复；App 内的开关按清单手动打开。</p>
     <div class="card"><h3>各 App 里的广告开关</h3>${st.steps.length ? `
       <label class="chk"><input type="checkbox" id="c-recipe" ${st.recipe_ref ? "" : "checked"} onchange="document.querySelectorAll('.stp').forEach(x=>x.checked=this.checked)"><span>${st.recipe_ref ? `试用同品牌参考脚本（${esc(st.recipe.split("/")[1] || "")} 录制）` : "按机型脚本自动关"}<small>${st.recipe_ref || !st.recipe_ok
         ? "安全模式：只关脚本里点名的开关，不做整页全关；你的手机页面不一样的话，找不到入口的步骤会跳过。"
@@ -485,7 +487,7 @@ function selfOff(){
 }
 
 /* ---------- 反馈 ---------- */
-const REPO = "https://github.com/rddmwmddr/android-ad-cleaner";
+const REPO = "https://github.com/BLACKIELF/qingjing-aigoodbro";
 const FB = {bug: ["遇到问题", "bug_report.md", "[问题] "], idea: ["功能建议", "feature_request.md", "[建议] "], device: ["适配新机型", "new_device.md", "[新机型] "]};
 async function openFeedback(type){
   type = type || "bug";
@@ -498,36 +500,30 @@ async function openFeedback(type){
     <label class="chk"><input type="checkbox" id="fbdiag" checked><span>附带诊断信息<small>客户端版本、电脑系统、手机型号和系统版本、执行结果和最近的日志；adb 读到 0 台时还有 USB 设备名、硬件 ID 与调试接口登记的 GUID。手机序列号已替换掉，不含应用列表和通知内容。可以在下面修改。</small></span></label>
     <details><summary>查看 / 修改诊断信息</summary><textarea id="fbdiagtext" class="mono" rows="6" style="margin-top:8px">${esc(diag)}</textarea></details>
     <div id="fbmsg" class="note info hide" style="margin-top:12px"></div>
-    <div class="actions"><button class="btn plain" onclick="openReport()">没有 GitHub 账号：上报错误日志</button><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="sendFeedback()">提交到 GitHub</button></div>`, true);
+    <div class="actions"><button class="btn plain" onclick="openReport()">预览 / 复制诊断</button><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="sendFeedback()">提交到 GitHub</button></div>`, true);
 }
 
-/* ---------- 错误日志上报：先预览全部内容，确认后发送 ---------- */
+/* ---------- 诊断：仅本地预览与复制，不联网发送 ---------- */
 async function openReport(){
   S.report = await api.report_payload();
-  if (!S.report.steps.length && !S.report.log.trim()){   // 没执行过：只有手机型号，看不出问题（10-28 六份空报告）
-    modal(`<h3>上报错误日志</h3><p class="lead">还没有执行记录，这份报告只有手机型号，看不出问题。请先执行一次再上报。</p>
-      <p class="lead" style="margin:0">还没执行就遇到问题（连不上手机、检测不出机型、扫描不出通知），请到 GitHub 反馈，写清楚卡在哪一步。</p>
-      <div class="actions"><button class="btn plain" onclick="closeModal()">关闭</button><button class="btn" onclick="openFeedback('bug')">到 GitHub 反馈</button></div>`);
-    return;
-  }
-  modal(`<h3>上报错误日志</h3>
-    <p class="lead" style="margin:0">发送到项目服务器 supabase.ahuamiao.com，用来定位问题。下面是要发送的全部内容：手机序列号、电脑用户名、邮箱、手机号、IP 已替换，不含应用列表、通知内容和账号信息。服务器保存 90 天，IP 只存不可还原的哈希。</p>
+  modal(`<h3>预览诊断</h3>
+    <p class="lead">诊断只显示在本机，不自动上传。序列号、用户目录、邮箱、手机号与 IP 已替换；复制后请再检查内容。</p>
     <pre class="report">${esc(JSON.stringify(S.report, null, 2))}</pre>
-    <div id="rpmsg" class="note hide" style="margin-top:12px"></div>
-    <div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" id="rpbtn" onclick="sendReport()">确认上报</button></div>`, true);
+    <div id="rpmsg" class="note hide"></div>
+    <div class="actions"><button class="btn plain" onclick="closeModal()">关闭</button><button class="btn" onclick="copyReport()">复制诊断</button></div>`, true);
 }
-async function sendReport(){
-  const b = $("#rpbtn"), m = $("#rpmsg");
-  b.disabled = true; b.textContent = "上报中…";
-  const r = await api.send_report(S.report);
-  m.classList.remove("hide", "ok", "bad");
-  if (r.ok){
-    m.classList.add("ok");
-    m.textContent = r.duplicate ? "这份日志一小时内上报过，不用重复发送。" : `上报成功。报告编号 ${r.id}；需要删除这份记录时，在 GitHub 提 Issue 附上编号。`;
-    b.textContent = "已上报";
-  } else {
-    m.classList.add("bad"); m.textContent = r.error; b.disabled = false; b.textContent = "重试";
-  }
+async function copyReport(){
+  const ok = await api.copy_text(JSON.stringify(S.report, null, 2));
+  const m = $("#rpmsg"); m.classList.remove("hide");
+  m.textContent = ok ? "已复制；可自行粘贴到反馈中。" : "自动复制失败，请选中上方文字手动复制。";
+}
+async function openAbout(){
+  const a = await api.about();
+  modal(`<h3>${esc(a.name)}</h3><p class="lead">版本 ${esc(a.version)} · ${esc(a.build)}<br>品牌适配与维护：${esc(a.author)}</p>
+    <p class="lead">原始开源项目作者：${esc(a.upstream_author)}<br>本软件基于原项目二次开发，沿用其去广告引擎与机型脚本。</p>
+    <div class="actions"><button class="btn ghost" onclick="api.open_url('${esc(a.upstream_url)}')">原始项目</button><button class="btn ghost" onclick="api.open_url('${esc(a.project_url)}')">本项目</button></div>
+    <details style="margin-top:18px"><summary>MIT 开源许可</summary><pre class="report">${esc(a.license)}</pre></details>
+    <div class="actions"><button class="btn" onclick="closeModal()">关闭</button></div>`, true);
 }
 async function sendFeedback(){
   const type = (document.querySelector("input[name=fbt]:checked") || {}).value || "bug";

@@ -23,7 +23,7 @@
     </queries>
 
     <application
-        android:name=".AacApp"
+        android:name="com.ahuamiao.adcleaner.AacApp"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Aac"
@@ -32,7 +32,7 @@
         android:allowBackup="false">
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.ahuamiao.adcleaner.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize"
@@ -46,11 +46,11 @@
         <!-- 执行期间引擎会切到别的 App 的设置页，本 App 退到后台；前台服务保住进程不被回收 -->
         <!-- 授权时自动读配对码（#634）：截屏只在配对期间开，完成即停 -->
         <service
-            android:name=".PairingService"
+            android:name="com.ahuamiao.adcleaner.PairingService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
         <service
-            android:name=".KeepAliveService"
+            android:name="com.ahuamiao.adcleaner.KeepAliveService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
@@ -60,7 +60,7 @@
 
         <!-- 通知栏填配对码的回复 -->
         <receiver
-            android:name=".PairingReceiver"
+            android:name="com.ahuamiao.adcleaner.PairingReceiver"
             android:exported="false" />
 
         <provider

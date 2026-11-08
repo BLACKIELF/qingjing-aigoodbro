@@ -48,13 +48,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.ahuamiao.adcleaner.R
 import org.json.JSONObject
 
-private const val GUIDE_URL = "https://github.com/rddmwmddr/android-ad-cleaner/tree/main/docs/%E6%89%8B%E6%9C%BA%E7%89%88%E6%95%99%E7%A8%8B"
+private const val GUIDE_URL = "https://github.com/BLACKIELF/qingjing-aigoodbro/tree/main/docs/%E6%89%8B%E6%9C%BA%E7%89%88%E6%95%99%E7%A8%8B"
 
 @Composable
 fun SheetHost(model: AppModel) {
@@ -67,6 +68,7 @@ fun SheetHost(model: AppModel) {
         ModalBottomSheet(onDismissRequest = { model.sheet = null }, sheetState = state) {
             when (sheet) {
                 is Sheet.More -> MoreSheet(model)
+                is Sheet.About -> AboutSheet(model)
                 is Sheet.Restore -> RestoreSheet(model)
                 is Sheet.Feedback -> FeedbackSheet(model, sheet)
                 is Sheet.Report -> ReportSheet(model, sheet.payload)
@@ -101,7 +103,7 @@ private fun SheetTitle(text: String) {
 @Composable
 private fun MoreSheet(model: AppModel) {
     val newer = model.newVersion
-    val rows = if (newer != null) 4 else 3
+    val rows = if (newer != null) 5 else 4
     var i = 0
     SheetBody {
         Segments {
@@ -125,10 +127,15 @@ private fun MoreSheet(model: AppModel) {
             ) { Text("反馈问题") }
             SegmentedListItem(
                 onClick = { model.openUrl(GUIDE_URL) },
-                shapes = ListItemDefaults.segmentedShapes(i, rows),
+                shapes = ListItemDefaults.segmentedShapes(i++, rows),
                 leadingContent = { Glyph(R.drawable.ic_menu_book) },
                 trailingContent = { Glyph(R.drawable.ic_open_in_new) },
             ) { Text("使用说明") }
+            SegmentedListItem(
+                onClick = { model.sheet = Sheet.About },
+                shapes = ListItemDefaults.segmentedShapes(i, rows),
+                leadingContent = { Glyph(R.drawable.ic_shield) },
+            ) { Text("关于清静") }
         }
         Spacer(Modifier.height(16.dp))
         Text(
@@ -136,6 +143,51 @@ private fun MoreSheet(model: AppModel) {
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+    }
+}
+
+// ---------- 关于 ---------- //
+
+@Composable
+private fun AboutSheet(model: AppModel) {
+    val context = LocalContext.current
+    val license = remember(context) {
+        context.assets.open("aac/legal/LICENSE").bufferedReader().use { it.readText() }
+    }
+    SheetBody(Modifier.verticalScroll(rememberScrollState())) {
+        SheetTitle("清静 · AiGoodBro")
+        Text("版本 ${model.version} · 安卓版", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "帮助你关闭安卓系统推荐、广告开关和营销通知。执行前确认项目，保留正常功能与还原入口。",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(16.dp))
+        Text("开源致谢", style = MaterialTheme.typography.titleMediumEmphasized)
+        Text(
+            "本软件基于 android-ad-cleaner 开发。原作者：肉呆大魔王（rddmwmddr）。AiGoodBro 维护此衍生版本的品牌与适配。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(onClick = { model.openUrl("https://github.com/rddmwmddr/android-ad-cleaner") }) {
+            Text("查看上游项目")
+        }
+        TextButton(onClick = { model.openUrl("https://github.com/BLACKIELF/qingjing-aigoodbro") }) {
+            Text("查看本项目源码")
+        }
+        Text("MIT 许可证", style = MaterialTheme.typography.titleMediumEmphasized)
+        SelectionContainer {
+            Text(
+                license,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "界面使用 AndroidX / Material；无线调试组件 libadb-android 按 Apache-2.0 许可使用，Shizuku API 与相关依赖保留各自开源许可。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -299,11 +351,11 @@ private fun FeedbackSheet(model: AppModel, sheet: Sheet.Feedback) {
             onClick = model::openReport,
             shapes = ButtonDefaults.shapes(),
             modifier = Modifier.align(Alignment.CenterHorizontally),
-        ) { Text("没有 GitHub 账号：上报错误日志") }
+        ) { Text("查看 / 复制错误日志") }
     }
 }
 
-// ---------- 错误日志上报：先看全部内容，确认后发送 ---------- //
+// ---------- 错误日志：仅在本机预览和复制 ---------- //
 
 @Composable
 private fun ReportSheet(model: AppModel, payload: JSONObject) {
@@ -311,9 +363,9 @@ private fun ReportSheet(model: AppModel, payload: JSONObject) {
     var sent by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     SheetBody {
-        SheetTitle("上报错误日志")
+        SheetTitle("错误日志")
         Text(
-            "发送到项目服务器 supabase.ahuamiao.com，用来定位问题。下面是要发送的全部内容：手机序列号、用户名、邮箱、手机号、IP 已替换，不含应用列表、通知内容和账号信息。服务器保存 90 天，IP 只存不可还原的哈希。",
+            "下面是本机生成的诊断内容，序列号等敏感信息已替换。不会上传到服务器；你可以先检查，再复制并自行分享。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 8.dp),
@@ -345,14 +397,14 @@ private fun ReportSheet(model: AppModel, payload: JSONObject) {
         Spacer(Modifier.height(16.dp))
         SizedButton(
             text = when {
-                sent -> "已上报"
-                sending -> "上报中"
+                sent -> "已复制"
+                sending -> "复制中"
                 result.isNotEmpty() -> "重试"
-                else -> "确认上报"
+                else -> "复制日志"
             },
             onClick = {
                 sending = true
-                model.sendReport(payload) { message, ok ->
+                model.copyReport(payload) { message, ok ->
                     result = message
                     sent = ok
                     sending = false

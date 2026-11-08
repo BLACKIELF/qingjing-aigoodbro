@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 BASE = ""       # 解出来的 aac/ 目录，boot() 填
 
-REPO = "https://github.com/rddmwmddr/android-ad-cleaner"
+REPO = "https://github.com/BLACKIELF/qingjing-aigoodbro"
 URL_LIMIT = 7500        # 网址太长浏览器会截断
 FEEDBACK = {"bug": ("bug_report.md", "[问题] "),
             "idea": ("feature_request.md", "[建议] "),
@@ -239,7 +239,7 @@ def setup_steps(brand=""):
                    "看到「已处于开发者模式」，回到这里"],
          "note": "",
          "notice": {"title": "第 1 步，共 3 步：打开开发者选项",
-                    "text": f"连点{tap} 7 下，输入锁屏密码；看到「已处于开发者模式」就回到「肉呆去广告」。"}},
+                    "text": f"连点{tap} 7 下，输入锁屏密码；看到「已处于开发者模式」就回到「清静 · AiGoodBro」。"}},
         {"key": "dev", "title": "打开无线调试", "action": "打开开发者选项",
          "lines": ["连上 Wi-Fi，点下面的按钮"]
                   + (["打开「USB 调试（安全设置）」，不然点不动下一个开关"] if xiaomi else [])
@@ -247,7 +247,7 @@ def setup_steps(brand=""):
          "note": "",
          "notice": {"title": "第 2 步，共 3 步：打开无线调试",
                     "text": ("先打开「USB 调试（安全设置）」；" if xiaomi else "")
-                            + "打开「无线调试」，弹窗里勾「始终允许」再点「允许」，然后回到「肉呆去广告」。"}},
+                            + "打开「无线调试」，弹窗里勾「始终允许」再点「允许」，然后回到「清静 · AiGoodBro」。"}},
         {"key": "pair", "title": "授权本 App", "action": "开始授权",
          "lines": ["点下面的按钮，共享屏幕时选「整个屏幕」，点「立即开始」",
                    "在打开的页面点「无线调试」→「输入配对码配对设备」" if xiaomi

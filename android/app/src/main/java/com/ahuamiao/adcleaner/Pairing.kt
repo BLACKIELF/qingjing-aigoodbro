@@ -18,7 +18,7 @@ import kotlin.concurrent.thread
  * 系统把回复送进来、App 醒着，当场找端口（对话框此时还开着）再配对。
  */
 object Pairing {
-    const val ACTION = "com.ahuamiao.adcleaner.PAIR"
+    const val ACTION = "com.aigoodbro.qingjing.PAIR"
     const val KEY = "code"
     private const val CHANNEL = "pair"
     private const val ID = 3
@@ -79,8 +79,8 @@ class PairingReceiver : BroadcastReceiver() {
                 val paired = AdbShell.pair(code, 8000)
                 val connected = paired && AdbShell.connect(8000)
                 when {
-                    connected -> Pairing.notify(context, "授权完成，以后不用再做", "回到「肉呆去广告」就能开始")
-                    paired -> Pairing.notify(context, "授权完成", "回到「肉呆去广告」，它会自动连上")
+                    connected -> Pairing.notify(context, "授权完成，以后不用再做", "回到「清静 · AiGoodBro」就能开始")
+                    paired -> Pairing.notify(context, "授权完成", "回到「清静 · AiGoodBro」，它会自动连上")
                     else -> Pairing.notify(context, "授权没成功",
                         "数字可能已经变了（每次打开那个页面都会换）。再点一次「使用配对码配对设备」，填新的 6 位数字", input = true)
                 }

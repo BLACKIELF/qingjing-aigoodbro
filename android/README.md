@@ -46,7 +46,7 @@ Jetpack Compose + 官方 Material 3 Expressive，代码在 `app/src/main/java/..
 不连手机逐屏验收（只在 debug 构建）：
 
 ```bash
-adb shell am start -n com.ahuamiao.adcleaner/.MainActivity --es demo home [--es sheet more]
+adb shell am start -n com.aigoodbro.qingjing/com.ahuamiao.adcleaner.MainActivity --es demo home [--es sheet more]
 ```
 
 页面和面板的名字在 `src/debug/.../Demo.kt`。`--es plan '<计划 JSON>'` 不经勾选，把计划交给真引擎（模拟器上没有营销渠道可选时用），`--es call pause` 发暂停。
@@ -90,7 +90,7 @@ android/build.sh assembleRelease
 构建前会把 `tool/`、`recipes/`（不含 `zztest-*`）、`gui/app.py`、提示音和 `brand-taps.json` 同步进 assets。版本号读 `gui/app.py` 的 `VERSION`。
 
 - 需要 JDK 17、Android SDK（compileSdk 37）、gradle 9.8.2，以及构建用的 Python 3.12。
-- `build.sh` 认 `JAVA_HOME` / `ANDROID_HOME` / `GRADLE_HOME`，不设就用维护者机器上的默认值；构建用的 Python 3.12 由 `CHAQUOPY_PYTHON` 指定，不设时 `app/build.gradle.kts` 会退回本机 uv 装的那份 macOS aarch64 路径，配置期 `require()` 一查不到就直接失败——别的机器必须设。仓库里没有 `gradlew`，构建走 PATH 上的 `gradle`；构建目录固定落在 `~/Library/Caches/aac-android/`。维护者机器以外没有验证过完整构建。
+- `build.sh` 认 `JAVA_HOME` / `ANDROID_HOME` / `GRADLE_HOME`，不设就用维护者机器上的默认值；构建用的 Python 3.12 由 `CHAQUOPY_PYTHON` 指定，不设时 `app/build.gradle.kts` 会退回本机 uv 装的那份 macOS aarch64 路径，配置期 `require()` 一查不到就直接失败——别的机器必须设。仓库里没有 `gradlew`，构建走 PATH 上的 `gradle`；构建目录默认落在 `~/.cache/qingjing-aigoodbro-android/`，可用 `QINGJING_ANDROID_BUILD_DIR` 指定 app 的完整输出目录。维护者机器以外没有验证过完整构建。
 - 协议层的 JVM 单测（`app/src/test/…/ShellServerTest.java`）不碰 Android：`cd android && gradle :app:testDebugUnitTest` 就能跑，读屏用假的 `ScreenReader` 注入；配置期同样要一份可执行的 Python 3.12。
 - 正式签名读 `.private/android-signing/keystore.properties`，没有就退回 debug 签名。证书丢了，已安装的 App 就没法覆盖更新。
 
