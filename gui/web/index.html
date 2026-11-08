@@ -103,10 +103,35 @@ pre.report{background:var(--log);color:var(--logtext);font-family:var(--mono);fo
 @media (max-width:940px){.app{grid-template-columns:184px minmax(0,1fr)}main{padding:26px 24px 30px}.brand{padding-left:6px;gap:8px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}.spin{animation-duration:2s}}
 @media (prefers-contrast:more){:root{--line:rgba(0,0,0,.18)}@media(prefers-color-scheme:dark){:root{--line:rgba(255,255,255,.24)}}}
+@media (min-width:1px){.app:target::before{content:"";position:absolute;inset:0 0 auto;height:28px;pointer-events:none;background:linear-gradient(100deg,rgba(123,160,255,.18),rgba(139,109,255,.06));backdrop-filter:blur(22px);z-index:1}}
+/* macOS compositing uses the native behind-window material under this WebView. */
+html:has(.app:target), html:has(.app:target) body{background:transparent}
+.app:target{
+  padding-top:28px;
+  background:
+    radial-gradient(ellipse at 16% 5%,rgba(89,137,255,.40),transparent 55%),
+    radial-gradient(ellipse at 92% 83%,rgba(152,111,251,.30),transparent 52%),
+    rgba(239,244,255,.66);
+}
+.app:target aside,.app:target .card,.app:target .kv,.app:target .dev{
+  backdrop-filter:blur(22px) saturate(145%);
+  -webkit-backdrop-filter:blur(22px) saturate(145%);
+  border-color:rgba(255,255,255,.55);
+  box-shadow:inset 0 1px rgba(255,255,255,.60),0 8px 26px rgba(39,61,114,.08);
+}
+.app:target aside{background:rgba(234,241,255,.38)}
+.app:target .card,.app:target .kv,.app:target .dev{background:rgba(255,255,255,.46)}
+@media (prefers-color-scheme:dark){
+  .app:target{background:radial-gradient(ellipse at 14% 8%,rgba(62,104,231,.38),transparent 58%),radial-gradient(ellipse at 90% 86%,rgba(124,76,222,.30),transparent 54%),rgba(17,20,34,.80)}
+  .app:target aside,.app:target .card,.app:target .kv,.app:target .dev{
+    background:rgba(20,25,45,.36);border-color:rgba(186,205,255,.18);
+    box-shadow:inset 0 1px rgba(212,224,255,.10),0 8px 26px rgba(0,0,0,.16);
+  }
+}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="app-glass">
   <aside>
     <div class="brand"><img src="img/logo.png" alt=""><span class="brand-copy">清静<small>AiGoodBro</small></span></div>
     <div class="step" data-s="1"><b>1</b>连接手机</div>
@@ -572,6 +597,7 @@ async function openAbout(){
     <div class="actions"><button class="btn ghost" onclick="api.open_url('${esc(a.upstream_url)}')">原始项目</button><button class="btn ghost" onclick="api.open_url('${esc(a.project_url)}')">本项目</button></div>
     <details style="margin-top:18px"><summary>MIT 开源许可</summary><pre class="report">${esc(a.license)}</pre></details>
     ${a.ui_license ? `<details style="margin-top:12px"><summary>AiGoodBro UI 开源许可</summary><pre class="report">${esc(a.ui_license)}</pre></details>` : ""}
+    <div class="row" style="margin-top:16px"><button class="btn ghost" onclick="api.open_url('https://aigoodbro.com')"><span aria-hidden="true">🎁</span> 点击有惊喜 · aigoodbro.com</button></div>
     <div class="actions"><button class="btn plain" onclick="openSupport()">企业微信客服</button><button class="btn" onclick="closeModal()">关闭</button></div>`, true);
 }
 async function sendFeedback(){

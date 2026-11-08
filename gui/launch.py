@@ -122,8 +122,26 @@ def main():
     result = {"ok": False}
     # 明确 file://：裸文件路径会启动 Bottle HTTP 服务，部分 Windows 环境回环连接超时（#18）。
     url = Path(app.BASE, "gui", "web", "index.html").resolve().as_uri()
+    mac_glass = sys.platform == "darwin"
+    url += "#app-glass"
     w = webview.create_window(app.APP_NAME, url, js_api=api, hidden=smoke,
+                              transparent=mac_glass, vibrancy=mac_glass,
                               width=1080, height=780, min_size=(900, 640))
+    if mac_glass:
+        import AppKit
+        from PyObjCTools import AppHelper
+        from webview.platforms.cocoa import BrowserView
+
+        def apply_titlebar():
+            native = BrowserView.instances[w.uid].window
+            titlebar = native.contentView().superview().subviews().lastObject()
+            if titlebar.respondsToSelector_("setBackgroundColor:"):
+                titlebar.setBackgroundColor_(AppKit.NSColor.clearColor())
+            native.setTitlebarAppearsTransparent_(True)
+            native.setStyleMask_(native.styleMask() | AppKit.NSWindowStyleMaskFullSizeContentView)
+            native.setHasShadow_(True)
+
+        w.events.loaded += lambda: AppHelper.callAfter(apply_titlebar)
     options = {"debug": "--debug" in sys.argv, "http_server": False}
     if smoke:
         options.update(func=smoke_gui, args=(w, result))

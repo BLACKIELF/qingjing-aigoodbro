@@ -14,7 +14,7 @@ except ImportError:
     import winpreflight
 
 APP_NAME = "清静 · AiGoodBro"
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 FROZEN = getattr(sys, "frozen", False)
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(BASE, "tool")
@@ -1184,7 +1184,7 @@ class Api:
             license_text = license_file.read_text(encoding="utf-8")
         except OSError:
             license_text = "未找到随附的 MIT 许可文件，请查看本项目源码中的 LICENSE。"
-        return {"name": APP_NAME, "version": VERSION, "build": "1108v2",
+        return {"name": APP_NAME, "version": VERSION, "build": "1108v3",
                 "author": "AiGoodBro",
                 "upstream_author": "肉呆大魔王（rddmwmddr）",
                 "upstream_url": "https://github.com/rddmwmddr/android-ad-cleaner",

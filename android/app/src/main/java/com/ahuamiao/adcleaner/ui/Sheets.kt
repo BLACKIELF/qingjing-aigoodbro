@@ -189,6 +189,9 @@ private fun AboutSheet(model: AppModel) {
         TextButton(onClick = { model.openUrl("https://github.com/BLACKIELF/qingjing-aigoodbro") }) {
             Text("查看本项目源码")
         }
+        TextButton(onClick = { model.openUrl("https://aigoodbro.com") }) {
+            Text("🎁 点击有惊喜 · aigoodbro.com")
+        }
         Text("MIT 许可证", style = MaterialTheme.typography.titleMediumEmphasized)
         SelectionContainer {
             Text(

@@ -2,7 +2,7 @@
 
 帮助关闭安卓手机里有开关的系统广告、推荐内容、营销通知，以及支持的快应用跳转和广告组件。先检测、再选择，确认后执行，保留备份与还原入口。成功清理后会用默认浏览器打开 https://aigoodbro.com，每轮一次。
 
-当前版本：**1.0.1 · 1108v2 开发预览**。已提供 Mac Apple 芯片版与 Android arm64 签名版。下载只认本仓库 [Releases](https://github.com/BLACKIELF/qingjing-aigoodbro/releases)。
+Mac Apple 芯片版为 **1.0.2 · 1108v3**，Android arm64 签名版为 **1.0.1 · 1108v2**。下载只认本仓库 [Releases](https://github.com/BLACKIELF/qingjing-aigoodbro/releases)。
 
 「超级清静」自动处理已适配的广告项，无需逐项选择。开始前备份，跳过未适配的机型脚本，保留服务通知和受保护组件。
 

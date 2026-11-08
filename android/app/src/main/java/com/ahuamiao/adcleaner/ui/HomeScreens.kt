@@ -5,6 +5,7 @@ package com.ahuamiao.adcleaner.ui
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -110,11 +111,12 @@ fun HomeScreen(model: AppModel) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
+                    .background(Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = .16f), MaterialTheme.colorScheme.surface.copy(alpha = .60f))), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Image(
-                    painterResource(R.drawable.ic_qingjing_launcher),
+                    painterResource(R.drawable.ic_aigoodbro_avatar),
                     contentDescription = null,
                     modifier = Modifier
                         .padding(start = 4.dp)
