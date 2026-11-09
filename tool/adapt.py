@@ -21,6 +21,7 @@ for _st in (sys.stdout, sys.stderr):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import entries
 import fast                                    # 只读 want_state / 驱动 Phone；不改引擎
+import recipe_kit
 import vocab
 from fast import Phone
 from run import fail, script_cmd             # 错误渲染与打包版的 --cli 规矩都只在 run.py 写一份
@@ -95,34 +96,9 @@ def step_name(pkg, page):
 
 
 DRAFT_HELPERS = '''
-import time
-
-ONLY = globals().get("ONLY") or []
-FAILED_STEPS = []
 VERIFIED_SWITCHES = 0        # 回读确认关闭的开关数
 MISSING_SWITCHES = []        # 没找到的开关（待人工确认）
 PENDING_SWITCHES = []        # 找到了但回读没确认关闭（待人工确认）
-
-
-def require(ok, reason):
-    if not ok:
-        raise RuntimeError(reason)
-
-
-def step(name):
-    def decorate(action):
-        if ONLY and name not in ONLY:
-            return action
-        print(f"\\n== {name}", flush=True)
-        p.miss = 0
-        try:
-            require(not p.locked(), "手机锁屏了，请机主解锁后再跑")
-            action()
-        except Exception as error:
-            FAILED_STEPS.append(name)
-            print(f"  ✗ 未完成：{error}", flush=True)
-        return action
-    return decorate
 
 
 def read_switches(max_screens):
@@ -284,6 +260,9 @@ def check_draft(p, recipe_path, only=()):
     # 手改过的草稿若写了不带 only= 的 p.off()，靠这个也只关点名的开关，不整页全关。
     p.safe_mode = True
     g = {"p": p, "__name__": "__draft__", "ONLY": list(only)}
+    # `adapt gen` 生成的草稿自带 DRAFT_HELPERS，会覆盖这层注入（#838 不迁移它）；
+    # 手改草稿或以后剥掉草稿模板时，这一行才是它的前导来源。
+    recipe_kit.preamble(p, g)
     build = p.d.shell("getprop ro.build.display.id").output.strip()
     osv = p.d.shell("getprop ro.mi.os.version.incremental").output.strip()
     m = re.search(r'^BUILD\s*=\s*"([^"]+)"', src, re.M)

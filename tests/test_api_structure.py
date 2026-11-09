@@ -17,6 +17,7 @@ BRIDGE = {
     "env": (),
     "about": (),
     "latest_version": (),
+    "check_update": (),
     "devices": (),
     "usb_hint": (),
     "status": ("serial",),

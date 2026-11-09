@@ -384,16 +384,19 @@ class GuiTests(unittest.TestCase):
         data = tempfile.TemporaryDirectory()
         self.addCleanup(data.cleanup)
         api = self.app.Api(data.name)
-        with patch.object(self.app.urllib.request, "urlopen", return_value=Reply(json.dumps({"version": "9.9.9"}).encode())):
+        with patch.object(self.app.urllib.request, "urlopen", side_effect=lambda *args, **kwargs: Reply(json.dumps({"version": "9.9.9"}).encode())):
             self.assertEqual(api.latest_version(), {"version": "9.9.9", "url": self.app.DOWNLOAD_PAGE})
-        with patch.object(self.app.urllib.request, "urlopen", return_value=Reply(json.dumps({"version": self.app.VERSION}).encode())):
+            self.assertEqual(api.check_update(), {"status": "available", "version": "9.9.9", "url": self.app.DOWNLOAD_PAGE})
+        with patch.object(self.app.urllib.request, "urlopen", side_effect=lambda *args, **kwargs: Reply(json.dumps({"version": self.app.VERSION}).encode())):
             self.assertEqual(api.latest_version(), {})
+            self.assertEqual(api.check_update(), {"status": "current"})
         # 从本分支 GitHub Release 读取 tag_name
         with patch.object(self.app.urllib.request, "urlopen",
                           return_value=Reply(json.dumps({"tag_name": "v9.9.10"}).encode())):
             self.assertEqual(api.latest_version()["version"], "9.9.10")
         with patch.object(self.app.urllib.request, "urlopen", side_effect=OSError("offline")):
             self.assertEqual(api.latest_version(), {})
+            self.assertEqual(api.check_update(), {"status": "error"})
         self.assertGreater(self.app.version_key("0.2.10"), self.app.version_key("0.2.9"))
 
 

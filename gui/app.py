@@ -739,7 +739,7 @@ class AdbDownloader:
     def _fetch(self, label, url, digest, zp):
         self.dl = {"state": "running", "pct": 0, "msg": f"正在从{label}下载 platform-tools……"}
         h = hashlib.sha256()
-        request = urllib.request.Request(url, headers={"User-Agent": f"AndroidAdCleaner/{VERSION}"})
+        request = urllib.request.Request(url, headers={"User-Agent": f"QingjingAiGoodBro/{VERSION}"})
         with urllib.request.urlopen(request, timeout=20) as r, open(zp, "wb") as f:
             total = int(r.headers.get("Content-Length") or 0); got = 0
             while True:
@@ -1193,22 +1193,31 @@ class Api:
                 "ui_license": Path(BASE, "licenses", "AiGoodBro-UI-MIT.txt").read_text(encoding="utf-8")}
 
     def latest_version(self):
-        """有新版时返回 {version, url}，没有或查不到返回 {}。旧版不会自动更新：0.2.6 发布后，
-        旧版又报了 21 份新版已经修好的问题（错误日志 10-28）。"""
+        """兼容旧窗口桥：只返回可下载的新版本。"""
+        result = self.check_update()
+        if result["status"] == "available":
+            return {"version": result["version"], "url": result["url"]}
+        return {}
+
+    def check_update(self):
+        """区分有更新、已是最新版和查询失败。"""
         current = version_key(VERSION)
         for url in LATEST_URLS:
             try:
-                request = urllib.request.Request(url, headers={"User-Agent": f"AndroidAdCleaner/{VERSION}",
+                request = urllib.request.Request(url, headers={"User-Agent": f"QingjingAiGoodBro/{VERSION}",
                                                                "Accept": "application/json"})
                 with urllib.request.urlopen(request, timeout=6) as response:
                     data = json.loads(response.read(65536).decode("utf-8"))
                 latest = str(data.get("version") or data.get("tag_name") or "")
             except Exception:
                 continue
-            if not version_key(latest):
+            key = version_key(latest)
+            if not key:
                 continue
-            return {"version": latest.lstrip("v"), "url": DOWNLOAD_PAGE} if version_key(latest) > current else {}
-        return {}
+            if key > current:
+                return {"status": "available", "version": latest.strip().lstrip("v"), "url": DOWNLOAD_PAGE}
+            return {"status": "current"}
+        return {"status": "error"}
 
     def _run(self, script, *args, timeout=180):
         return self.runner.run(script, *args, timeout=timeout)
