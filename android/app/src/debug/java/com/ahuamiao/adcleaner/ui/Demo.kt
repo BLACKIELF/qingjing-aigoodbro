@@ -27,7 +27,8 @@ object Demo {
         }
         val name = intent?.getStringExtra("demo") ?: return
         val sheet = intent.getStringExtra("sheet")
-        model.demoVersion("0.3.2", if (sheet == "newer") NewVersion("0.3.3", "https://example.invalid") else null)
+        val newer = if (sheet == "newer") NewVersion("0.3.3", "https://example.invalid") else null
+        model.demoVersion("0.3.2", newer)
         model.demoBrand(if (name == "setup3mi") "Xiaomi" else "OPPO")
 
         val backend = DemoBackend(when (name) {
@@ -37,7 +38,7 @@ object Demo {
             "old", "ask", "denied" -> name
             "stopped-sh" -> "stopped"
             else -> "ready"
-        }, name != "nodev")
+        }, name != "nodev", newer)
         val selection = when (name) {
             "choose" -> selection(detection())
             "blocked" -> Selection(Detection.parse(detection().put("blocked", true).put("warnings", JSONArray(listOf("手机锁屏了。解锁并保持亮屏，再重新检测。")))))
@@ -131,11 +132,20 @@ object Demo {
         )
     }
 
-    private class DemoBackend(private val state: String, private val hasDevice: Boolean) : Backend {
+    private class DemoBackend(
+        private val state: String,
+        private val hasDevice: Boolean,
+        private val newer: NewVersion?,
+    ) : Backend {
         override suspend fun boot() = "0.3.2"
         override suspend fun shellState() = state
         override suspend fun call(method: String, vararg args: Any?): Any? = when (method) {
             "devices" -> JSONObject().put("list", JSONArray(if (hasDevice) listOf(JSONObject().put("serial", device.serial).put("name", device.title).put("model", device.model)) else emptyList()))
+            "check_update" -> if (newer == null) {
+                JSONObject().put("status", "current")
+            } else {
+                JSONObject().put("status", "available").put("version", newer.version).put("url", newer.url)
+            }
             "diagnostics" -> "版本 0.3.2\n手机 PKD110"
             "restore" -> "已恢复 2 个快应用组件。"
             "report_payload" -> JSONObject().put("steps", JSONArray()).put("log", "")

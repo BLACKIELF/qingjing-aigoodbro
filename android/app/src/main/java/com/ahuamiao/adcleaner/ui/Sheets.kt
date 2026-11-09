@@ -109,9 +109,13 @@ private fun SheetTitle(text: String) {
 @Composable
 private fun MoreSheet(model: AppModel) {
     val newer = model.newVersion
-    val rows = if (newer != null) 6 else 5
+    val ready = model.screen is Screen.Home && model.device != null
+    val rows = 5 + (if (newer != null) 1 else 0) + (if (ready) 2 else 0)
+    val updateStatus = model.updateMessage
+    val supportingContent: (@Composable () -> Unit)? =
+        if (updateStatus != null) ({ Text(updateStatus) }) else null
     var i = 0
-    SheetBody {
+    SheetBody(Modifier.verticalScroll(rememberScrollState())) {
         Segments {
             if (newer != null) {
                 SegmentedListItem(
@@ -122,10 +126,27 @@ private fun MoreSheet(model: AppModel) {
                 ) { Text("有新版本 ${newer.version}") }
             }
             SegmentedListItem(
-                onClick = model::openRestore,
+                onClick = { model.checkForUpdate(manual = true) },
+                enabled = !model.checkingUpdate,
                 shapes = ListItemDefaults.segmentedShapes(i++, rows),
-                leadingContent = { Glyph(R.drawable.ic_history) },
-            ) { Text("还原改动") }
+                leadingContent = { Glyph(R.drawable.ic_system_update) },
+                supportingContent = supportingContent,
+            ) { Text(if (model.checkingUpdate) "正在检查更新…" else "检查更新") }
+            if (ready) {
+                SegmentedListItem(
+                    onClick = {
+                        model.sheet = null
+                        model.oneTap()
+                    },
+                    shapes = ListItemDefaults.segmentedShapes(i++, rows),
+                    leadingContent = { Glyph(R.drawable.ic_ad_off) },
+                ) { Text("手动选择去广告") }
+                SegmentedListItem(
+                    onClick = model::openRestore,
+                    shapes = ListItemDefaults.segmentedShapes(i++, rows),
+                    leadingContent = { Glyph(R.drawable.ic_history) },
+                ) { Text("还原改动") }
+            }
             SegmentedListItem(
                 onClick = { model.openFeedback() },
                 shapes = ListItemDefaults.segmentedShapes(i++, rows),

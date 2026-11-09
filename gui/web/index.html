@@ -19,9 +19,9 @@
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
   font:13px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;}
 /* AiGoodBro WorkspaceGlass palette and metric adaptation. The execution flow stays unchanged. */
-.app{display:grid;grid-template-columns:196px minmax(0,1fr);height:100vh;background:radial-gradient(ellipse 85% 70% at 0 0,var(--glass-blue),transparent 75%),radial-gradient(ellipse 65% 65% at 100% 100%,var(--glass-purple),transparent 75%)}
-aside{background:var(--side);border-right:1px solid var(--line);padding:22px 12px 14px;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto}
-.brand{font-weight:600;font-size:17px;padding:0 8px 24px;display:flex;align-items:center;gap:10px;white-space:nowrap}
+.app{display:grid;grid-template-rows:auto minmax(0,1fr);height:100vh;background:radial-gradient(ellipse 85% 70% at 0 0,var(--glass-blue),transparent 75%),radial-gradient(ellipse 65% 65% at 100% 100%,var(--glass-purple),transparent 75%)}
+aside{background:var(--side);border-bottom:1px solid var(--line);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;z-index:2}
+.brand{font-weight:600;font-size:17px;padding:0;display:flex;align-items:center;gap:10px;white-space:nowrap}
 .brand img{width:32px;height:32px;border-radius:9px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
 .brand-copy{display:flex;flex-direction:column;line-height:1.3;gap:3px}.brand-copy small{font-size:11px;font-weight:400;color:var(--sub);letter-spacing:.02em}
 .step{display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 10px;border-radius:8px;color:var(--sub);font-size:13px;cursor:default;transition:background .14s,color .14s}
@@ -29,7 +29,21 @@ aside{background:var(--side);border-right:1px solid var(--line);padding:22px 12p
 .step.on{background:var(--accent-weak);color:var(--accent);font-weight:600}
 .step.on b{border-color:transparent;background:#2866F7;color:#fff}
 .step.done b{border-color:transparent;background:var(--ok-weak);color:var(--ok)}
-.side-foot{margin-top:auto;padding-top:26px;display:flex;flex-direction:column;gap:2px}
+.steps{display:flex;gap:4px;margin-inline:auto}
+.steps[hidden]{display:none}
+.step{min-height:34px;padding:4px 8px}
+.menu{position:relative}
+.menu summary{list-style:none;cursor:pointer}
+.menu summary::-webkit-details-marker{display:none}
+.menu summary[data-update]::after{content:"";display:inline-block;width:7px;height:7px;margin-left:7px;border-radius:50%;background:var(--accent)}
+.side-foot{position:absolute;right:0;top:calc(100% + 8px);min-width:214px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.15);display:flex;flex-direction:column;gap:2px}
+.update-status{color:var(--sub);font-size:12px;margin:0;padding:0 10px}
+.update-status:empty{display:none}
+.quick-home{height:100%;min-height:300px;display:grid;place-content:center;text-align:center;justify-items:center}
+.quick-home img{width:84px;height:84px;margin-bottom:22px;border-radius:22px}
+.quick-home h1{font-size:30px;margin:0 0 8px}
+.quick-home .btn{min-width:186px;min-height:44px;font-size:15px;border-radius:10px}
+
 .link{display:flex;align-items:center;gap:9px;background:none;border:0;color:var(--sub);text-align:left;padding:7px 10px;border-radius:8px;cursor:pointer;font:inherit;font-size:12px;min-height:32px;transition:background .14s,color .14s}
 .link svg{width:15px;height:15px;flex:0 0 15px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .link:hover{background:var(--accent-weak);color:var(--text)}
@@ -100,7 +114,7 @@ select{border:1px solid var(--line);border-radius:8px;min-height:30px;padding:4p
 textarea.mono,input[type=text].mono{font-family:var(--mono);font-size:12px}
 pre.report{background:var(--log);color:var(--logtext);font-family:var(--mono);font-size:12px;border-radius:10px;padding:14px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:12px 0 0}
 .modal .box.wide{width:min(640px,92vw);max-height:88vh;overflow:auto}
-@media (max-width:940px){.app{grid-template-columns:184px minmax(0,1fr)}main{padding:26px 24px 30px}.brand{padding-left:6px;gap:8px}}
+@media (max-width:940px){.steps{gap:1px}.step{padding-inline:5px}main{padding:26px 24px 30px}.brand{padding-left:6px;gap:8px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}.spin{animation-duration:2s}}
 @media (prefers-contrast:more){:root{--line:rgba(0,0,0,.18)}@media(prefers-color-scheme:dark){:root{--line:rgba(255,255,255,.24)}}}
 @media (min-width:1px){.app:target::before{content:"";position:absolute;inset:0 0 auto;height:28px;pointer-events:none;background:linear-gradient(100deg,rgba(123,160,255,.18),rgba(139,109,255,.06));backdrop-filter:blur(22px);z-index:1}}
@@ -134,22 +148,31 @@ html:has(.app:target), html:has(.app:target) body{background:transparent}
 <div class="app" id="app-glass">
   <aside>
     <div class="brand"><img src="img/logo.png" alt=""><span class="brand-copy">清静<small>AiGoodBro</small></span></div>
+    <div class="steps" id="steps" hidden>
     <div class="step" data-s="1"><b>1</b>连接手机</div>
     <div class="step" data-s="2"><b>2</b>检测</div>
     <div class="step" data-s="3"><b>3</b>选择要关的</div>
     <div class="step" data-s="4"><b>4</b>执行</div>
     <div class="step" data-s="5"><b>5</b>完成</div>
-    <div class="side-foot">
-      <button class="link" onclick="openRestore()"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 7V3M4 7h4M4 7a6 6 0 1 1-1 6"/></svg>还原改动</button>
+    </div>
+    <details class="menu" id="more">
+      <summary class="btn plain" id="more-label">更多</summary>
+      <div class="side-foot">
+      <button class="link" onclick="beginDeviceAction('manual')">手动选择</button>
+      <button class="link" onclick="showConnect()">连接帮助</button>
+      <button class="link" onclick="beginDeviceAction('restore')"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 7V3M4 7h4M4 7a6 6 0 1 1-1 6"/></svg>还原改动</button>
       <button class="link" onclick="api.open_path('backups')"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5.5h6l1.5 2h7.5v8.5h-15zM2.5 5.5V4h6l1.5 1.5h7.5v2"/></svg>打开备份文件夹</button>
       <button class="link" onclick="openSettings()"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 2-.5 2-2 .9-1.9-.5-1.8 3 1.5 1.5v2.2l-1.5 1.5 1.8 3 1.9-.5 2 .9.5 2h3l.5-2 2-.9 1.9.5 1.8-3-1.5-1.5V8.9l1.5-1.5-1.8-3-1.9.5-2-.9-.5-2z"/><circle cx="9.5" cy="10" r="2.5"/></svg>设置</button>
       <button class="link" onclick="openFeedback()"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3.5h14V14H8l-4 3v-3H3zM6 7h8M6 10h5"/></svg>反馈问题</button>
       <button class="link" onclick="api.open_url('https://github.com/BLACKIELF/qingjing-aigoodbro')"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3.5h5.5L10 5l1.5-1.5H17v12h-5.5L10 17l-1.5-1.5H3zM10 5v12"/></svg>使用说明</button>
       <button class="link" onclick="openSupport()"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h14v10H8l-4 3v-3H3zM6 7h3M6 10h6"/><path d="M13 6.5v3M11.5 8H14.5"/></svg>企业微信客服</button>
       <button class="link" onclick="openAbout()"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 9v5M10 6.2v.1"/></svg>关于清静</button>
+      <button class="link" id="check-update" onclick="checkUpdate(true)">检查更新</button>
+      <p class="update-status" id="update-status" role="status"></p>
       <button class="link newver hide" id="newver"></button>
       <div class="ver" id="ver"></div>
-    </div>
+      </div>
+    </details>
   </aside>
   <main id="main"></main>
 </div>
@@ -164,6 +187,7 @@ const main = () => $("#main");
 
 function setStep(n){
   S.step = n;
+  $("#steps").hidden = n === 0;
   document.querySelectorAll(".step").forEach(e => {
     const k = +e.dataset.s; e.classList.toggle("on", k === n); e.classList.toggle("done", k < n);
   });
@@ -171,18 +195,91 @@ function setStep(n){
 function modal(html, wide){ $("#modalbox").innerHTML = html; $("#modalbox").classList.toggle("wide", !!wide); $("#modal").classList.add("show"); }
 function closeModal(){ $("#modal").classList.remove("show"); }
 
+let updateRequest;
+async function checkUpdate(manual = false){
+  const status = $("#update-status");
+  const button = $("#check-update");
+  if (manual) {
+    status.textContent = "正在检查更新…";
+    button.disabled = true;
+  }
+  if (!updateRequest) {
+    updateRequest = Promise.resolve().then(() => api.check_update())
+      .catch(() => ({status: "error"}))
+      .finally(() => { updateRequest = null; });
+  }
+  const result = await updateRequest;
+  const available = result?.status === "available";
+  if (available || result?.status === "current") {
+    const download = $("#newver");
+    download.classList.toggle("hide", !available);
+    const label = $("#more-label");
+    label.toggleAttribute("data-update", available);
+    label.setAttribute("aria-label", available ? "更多，有新版本" : "更多");
+    download.textContent = available ? `下载新版本 ${result.version}` : "";
+    download.onclick = available ? () => api.open_url(result.url) : null;
+  }
+  if (manual) {
+    status.textContent = available ? `发现新版本 ${result.version}` :
+      result?.status === "current" ? "已是最新版本" : "暂时无法检查更新，请稍后重试。";
+    button.disabled = false;
+  }
+}
+
+const more = $("#more");
+more.addEventListener("click", event => {
+  if (event.target.closest("button:not(#check-update)")) more.open = false;
+});
+document.addEventListener("click", event => {
+  if (!more.contains(event.target)) more.open = false;
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && more.open) {
+    more.open = false;
+    $("#more-label").focus();
+  }
+});
+
+function showHome(){
+  setStep(0);
+  clearInterval(pollDev);
+  main().innerHTML = `
+    <section class="quick-home">
+      <img src="img/logo.png" alt="">
+      <h1>让手机清静一点</h1>
+      <p class="lead">连接安卓手机，一键处理已适配的广告和推荐。</p>
+      <button class="btn" id="quick-clean" onclick="beginDeviceAction('quick')">一键清静</button>
+    </section>`;
+}
+
+let findingDevice = false;
+async function beginDeviceAction(action){
+  if (findingDevice || S.step === 4) return;
+  if (!ENV.adb) { showConnect(action); return; }
+  findingDevice = true;
+  modal('<h3>正在查找手机…</h3>');
+  try {
+    const devices = await api.devices();
+    if (!devices.error && devices.list.length === 1 && devices.list[0].state === "device") {
+      closeModal();
+      pick(devices.list[0], action);
+    } else {
+      closeModal();
+      showConnect(action);
+    }
+  } catch (error) {
+    modal(`<h3>没能找到手机</h3><p class="lead">${esc(error)}</p><div class="actions"><button class="btn" onclick="closeModal()">关闭</button></div>`);
+  } finally {
+    findingDevice = false;
+  }
+}
+
 window.addEventListener("pywebviewready", async () => {
   api = window.pywebview.api;
   ENV = await api.env();
   $("#ver").textContent = "版本 " + ENV.version;
-  showConnect();
-  api.latest_version().then(r => {      // 旧版不会自动更新：有新版就在侧栏提示
-    if (!r || !r.version) return;
-    const b = $("#newver");
-    b.textContent = `有新版本 ${r.version}，点这里下载`;
-    b.onclick = () => api.open_url(r.url);
-    b.classList.remove("hide");
-  }).catch(() => {});
+  showHome();
+  void checkUpdate();
 });
 
 /* ---------- 1 连接 ---------- */
@@ -194,10 +291,13 @@ const TUT = [
   ["dev-5-usb.png", "⑤ 打开「USB 调试」。小米还要打开「USB 调试（安全设置）」"],
 ];
 let pollDev = null;
-function showConnect(){
+let connectAction = "quick";
+function showConnect(action = "quick"){
+  if (S.step === 4) return;
+  connectAction = action;
   setStep(1); clearInterval(pollDev);
   main().innerHTML = `
-    <h1>让手机清静一点</h1>
+    <div class="row" style="justify-content:space-between"><h1>连接手机</h1><button class="btn plain" onclick="showHome()">返回首页</button></div>
     <p class="lead">用数据线把手机连到这台电脑。手机要打开开发者模式和 USB 调试。</p>
     <div class="note info"><b>设备支持范围</b>：支持通过 adb 连接的安卓设备。使用 HDC 的华为原生鸿蒙暂不支持；升级客户端也不会获得鸿蒙适配。荣耀 MagicOS 属于另一种情况，可先连接检测，没有本型号脚本时可自选同品牌参考脚本。</div>
     <div class="card"><h3>关掉这些打扰，保留正常功能</h3><p class="lead" style="margin:0">系统广告与跟踪 · 热搜资讯 · 商店推广 · 营销通知 · 快应用跳转</p><p class="lead" style="margin:8px 0 0;font-size:12px">先检测，再选择，确认后执行。具体项目以机型适配为准；第三方 App 自带的开屏广告不在范围内。</p></div>
@@ -230,19 +330,29 @@ function renderAdb(){
     <p class="lead" style="margin:14px 0 0">电脑上已经装了 adb？<a href="#" onclick="openSettings();return false" style="color:var(--accent)">手动指定它的位置</a></p></div>`;
 }
 async function dlAdb(){
-  $("#dlbtn").disabled = true; $("#dlbar").classList.remove("hide");
+  const button = $("#dlbtn");
+  const message = $("#dlmsg");
+  const progress = $("#dlbar");
+  button.disabled = true;
+  progress.classList.remove("hide");
   await api.download_adb();
   const t = setInterval(async () => {
     const d = await api.download_state();
-    $("#dlmsg").textContent = d.msg; $("#dlbar i").style.width = d.pct + "%";
-    if (d.state === "done"){ clearInterval(t); ENV = await api.env(); showConnect(); }
-    if (d.state === "error"){ clearInterval(t); $("#dlbtn").disabled = false; }
+    message.textContent = d.msg;
+    progress.querySelector("i").style.width = d.pct + "%";
+    if (d.state === "done"){
+      clearInterval(t);
+      ENV = await api.env();
+      if (button === $("#dlbtn")) showConnect(connectAction);
+    }
+    if (d.state === "error"){ clearInterval(t); button.disabled = false; }
   }, 400);
 }
 async function refreshDevices(){
   if (S.step !== 1) return;
-  const r = await api.devices();
   const box = $("#devbox"); if (!box) return;
+  const r = await api.devices();
+  if (box !== $("#devbox")) return;
   if (r.error && r.error !== "no-adb"){ box.innerHTML = `<div class="note bad">${esc(r.error)}</div>`; return; }
   if (!r.list.length){
     if (!S.usbAt || Date.now() - S.usbAt > 8000){     // 只读设备管理器，较慢，8 秒查一次
@@ -255,15 +365,28 @@ async function refreshDevices(){
     $("#tutbox").open = true; return;
   }
   S.usbHint = "";
-  box.innerHTML = r.list.map(d => {
+  box.innerHTML = r.list.map((d, index) => {
     let tag, btn = "";
-    if (d.state === "device"){ tag = `<span class="tag ok">已连接</span>`; btn = `<button class="btn" onclick='pick(${JSON.stringify(d)})'>用这台</button>`; }
+    if (d.state === "device"){ tag = `<span class="tag ok">已连接</span>`; btn = `<button class="btn" data-device="${index}">用这台</button>`; }
     else if (d.state === "unauthorized") tag = `<span class="tag warn">等待授权</span> <small>请在手机弹窗上勾「始终允许」，点「允许」</small>`;
     else tag = `<span class="tag bad">${esc(d.state)}</span> <small>重新插拔数据线</small>`;
     return `<div class="dev"><div class="ico">📱</div><div class="meta"><b>${esc(d.name || (d.brand + " " + d.model) || d.serial)}</b><small>${esc(d.model)} · ${esc(d.serial)}</small><div style="margin-top:4px">${tag}</div></div>${btn}</div>`;
   }).join("");
+  box.querySelectorAll("[data-device]").forEach(button => {
+    button.onclick = () => pick(r.list[Number(button.dataset.device)], connectAction);
+  });
 }
-function pick(d){ clearInterval(pollDev); S.serial = d.serial; S.dev = d; S.chans = null; S.chanNotes = []; showDetect(); }
+function pick(device, action){
+  if (action === "manual") clearInterval(pollDev);
+  S.serial = device.serial;
+  S.dev = device;
+  S.status = null;
+  S.chans = null;
+  S.chanNotes = [];
+  if (action === "manual") showDetect();
+  else if (action === "restore") openRestore();
+  else askSuperClean();
+}
 
 /* ---------- 2 检测 ---------- */
 async function showDetect(){
@@ -273,7 +396,7 @@ async function showDetect(){
   const serial = S.serial;
   const st = await api.status(serial);
   if (S.step !== 2 || S.serial !== serial) return;     // 等结果期间已离开检测页或换了手机：不改别人的页面（#662）
-  if (st.error){ main().innerHTML += `<div class="note bad">检测失败：${esc(st.error)}</div><div class="actions"><button class="btn plain" onclick="showConnect()">返回</button></div>`; return; }
+  if (st.error){ main().innerHTML += `<div class="note bad">检测失败：${esc(st.error)}</div><div class="actions"><button class="btn plain" onclick="showHome()">返回首页</button></div>`; return; }
   S.status = st;
   const i = st.info, name = i.name || (i.brand + " " + i.model);
   const qa = st.quickapps, qaKeep = qa.filter(q => q.keep).length;
@@ -295,9 +418,9 @@ async function showDetect(){
     </div>
     ${st.recipe && !st.recipe_ref ? "" : `<div class="note info" style="margin-top:14px">这个型号还没有机型脚本：营销通知、快应用、广告组件可以自动处理；各 App 里的广告开关要照<a href="#" onclick="openChecklist();return false">${esc(checklistName(i.brand))}手动清单</a>关${st.recipe_ref ? `，也可以在下一步试用同品牌别的机型录的参考脚本` : ""}。</div>`}
     ${st.recipe && !st.recipe_ref && !st.recipe_ok ? `<div class="note warn" style="margin-top:14px">机型脚本是按 ${esc(st.recipe_build)} 录的，这台是 ${esc(i.os || i.build)}。会用安全模式跑：只关脚本里点名的开关，找不到入口的步骤跳过，不会乱点。</div>` : ""}
-    <div class="actions"><button class="btn plain" onclick="showConnect()">换一台</button><button class="btn plain" onclick="showDetect()">重新检测</button>
+    <div class="actions"><button class="btn plain" onclick="showConnect('manual')">换一台</button><button class="btn plain" onclick="showDetect()">重新检测</button>
     <button class="btn ghost" ${st.locked || foldBlock || st.input_blocked ? "disabled" : ""} onclick="showChoose()">手动选择</button>
-    <button class="btn" ${st.locked || foldBlock || st.input_blocked ? "disabled" : ""} onclick="askSuperClean()">超级清静</button></div>`;
+    <button class="btn" ${st.locked || foldBlock || st.input_blocked ? "disabled" : ""} onclick="askSuperClean()">一键清静</button></div>`;
 }
 
 const CHECKLIST = {OPPO: "OPPO-ColorOS.md", ONEPLUS: "OPPO-ColorOS.md", REALME: "OPPO-ColorOS.md", HONOR: "荣耀-MagicOS.md",
@@ -400,7 +523,7 @@ async function go(){
   S.plan = plan; S.logNext = 0; S.cleanupRun = {eligible: true, opened: false}; showRun();
 }
 function askSuperClean(){
-  modal(`<h3>开始超级清静？</h3><p class="lead">自动处理已适配的广告开关、明确的营销通知、可关闭的快应用和已识别的广告组件。开始前会备份，服务通知和受保护的组件会保留。</p><div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="runSuperClean()">开始清理</button></div>`);
+  modal(`<h3>开始一键清静？</h3><p class="lead">手机：${esc(S.dev?.name || S.dev?.model || S.serial || "待检测")}</p><p class="lead">自动处理已适配的广告开关、明确的营销通知、可关闭的快应用和已识别的广告组件。开始前会备份，服务通知和受保护的组件会保留。</p><div class="actions"><button class="btn plain" onclick="closeModal()">取消</button><button class="btn" onclick="runSuperClean()">开始清理</button></div>`);
 }
 async function runSuperClean(){
   modal(`<h3>正在检测并扫描…</h3><p class="lead">开始执行后，可以在进度页停止清理。</p>`);
@@ -415,6 +538,7 @@ async function runSuperClean(){
     return;
   }
   closeModal();
+  clearInterval(pollDev);
   S.logNext = 0;
   S.cleanupRun = {eligible: true, opened: false};
   showRun();
@@ -519,7 +643,7 @@ function showDone(r){
   const failed = r.results.some(x => x.rc !== 0 && !x.stopped);   // 点了停止不算出错，不提示上报
   const retry = r.retry || 0;      // 可重试的步数由后台按结果算好（gui/app.py 的 retryable，#638）
   if (!r.results.length){ r.results = []; }
-  main().innerHTML = `<h1>${ok ? "完成" : failed ? "已结束（有步骤没成功）" : "已停止"}</h1><p class="lead">用时 ${r.sec} 秒。去下拉搜索、负一屏、应用商店、浏览器看一眼，确认功能正常。</p>
+  main().innerHTML = `<div class="row" style="justify-content:space-between"><h1>${ok ? "完成" : failed ? "已结束（有步骤没成功）" : "已停止"}</h1><button class="btn plain" onclick="showHome()">返回首页</button></div><p class="lead">用时 ${r.sec} 秒。去下拉搜索、负一屏、应用商店、浏览器看一眼，确认功能正常。</p>
     ${retry ? `<div class="row" style="margin-bottom:14px"><button class="btn" onclick="retryRun(this)">重试没成功的步骤（${retry}）</button></div>` : ""}
     <div class="card ${r.results.length ? "" : "hide"}">${r.results.map(x => `<div class="res"><span class="tag ${x.skipped && x.rc === 0 ? "warn" : x.rc === 0 ? "ok" : x.stopped ? "warn" : "bad"}">${x.skipped ? "跳过" : x.stopped ? "已停止" : x.rc === 0 ? "成功" : "失败"}</span><span class="t">${esc(x.title)}</span><span class="d">${esc(summarize(x))} · ${x.sec} 秒</span></div>`).join("")}</div>
     ${r.recovery ? `<div class="card" id="ui-recovery"><h3>排查读屏连接</h3><p class="lead">${esc(r.recovery)}</p><div class="actions"><button class="btn plain" onclick="checkUi()">检查读屏连接</button><button class="btn plain" onclick="copyDiagnostics()">复制完整诊断</button></div></div>` : ""}
@@ -548,7 +672,7 @@ function askDevOff(){
 }
 async function devOff(){
   closeModal(); await api.dev_off(S.serial);
-  modal(`<h3>已关闭</h3><p class="lead">请在手机上打开 设置 → 搜索「开发者选项」，确认总开关是关着的。</p><div class="actions"><button class="btn" onclick="closeModal();showConnect()">好</button></div>`);
+  modal(`<h3>已关闭</h3><p class="lead">请在手机上打开 设置 → 搜索「开发者选项」，确认总开关是关着的。</p><div class="actions"><button class="btn" onclick="closeModal();showHome()">好</button></div>`);
 }
 function selfOff(){
   modal(`<h3>在手机上关闭</h3><p class="lead">设置 → 顶部搜索「开发者选项」→ 关掉页面最上方的总开关。</p><div class="actions"><button class="btn" onclick="closeModal()">好</button></div>`);
@@ -632,7 +756,7 @@ async function sendFeedback(){
 /* ---------- 还原 ---------- */
 function openRestore(){
   if (!S.serial){ modal(`<h3>先连接手机</h3><p class="lead">还原要连着手机操作。请先在「连接手机」里选中要还原的手机。</p><div class="actions"><button class="btn" onclick="closeModal()">好</button></div>`); return; }
-  modal(`<h3>还原改动</h3><p class="lead">选一项恢复。App 内的开关要按清单路径手动打开。</p>
+  modal(`<h3>还原改动</h3><p class="lead">手机：${esc(S.dev?.name || S.dev?.model || S.serial)}</p><p class="lead">选一项恢复。App 内的开关要按清单路径手动打开。</p>
     <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0">
       <button class="btn ghost" onclick="restore('quickapp')">恢复快应用</button>
       <button class="btn ghost" onclick="restore('suspend')">恢复挂起的广告组件</button>
@@ -674,7 +798,7 @@ async function saveAdb(){
   adbMessage(`已保存：${r.path}（版本 ${r.version || "未知"}）${r.running ? "。正在执行，本步骤结束后生效" : ""}`, "ok");
   renderAdbInfo(r);
   ENV = await api.env();
-  if (S.step === 1) showConnect();
+  if (S.step === 1) showConnect(connectAction);
 }
 async function browseAdb(){
   const picked = await api.pick_adb_file();
@@ -686,7 +810,7 @@ async function clearAdb(){
   renderAdbInfo(info);
   adbMessage(info.path ? "已恢复自动查找。" : "已恢复自动查找，但电脑上还是没找到 adb，请下载或指定路径。", info.path ? "ok" : "warn");
   ENV = await api.env();
-  if (S.step === 1) showConnect();
+  if (S.step === 1) showConnect(connectAction);
 }
 </script>
 </body>

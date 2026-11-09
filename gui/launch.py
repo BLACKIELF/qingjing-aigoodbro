@@ -53,13 +53,13 @@ def smoke_gui(window, result):
             raise RuntimeError("页面加载超时")
         deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
-            ready = window.evaluate_js("typeof api !== 'undefined' && !!api && !!document.querySelector('#tutbox')")
+            ready = window.evaluate_js("typeof api !== 'undefined' && !!api && !!document.querySelector('#quick-clean')")
             if ready:
                 break
             time.sleep(0.1)
         else:
             raise RuntimeError("JS API 桥初始化超时")
-        window.evaluate_js("window.__smokeEnv = null; api.env().then(x => window.__smokeEnv = x.version)")
+        window.evaluate_js("showConnect(); window.__smokeEnv = null; api.env().then(x => window.__smokeEnv = x.version)")
         while time.monotonic() < deadline:
             report = window.evaluate_js("({url: location.href, version: window.__smokeEnv, images: [...document.querySelectorAll('#tutbox img')].every(i => i.complete && i.naturalWidth > 0)})")
             if report.get("version") == app.VERSION and report.get("images") and report.get("url", "").startswith("file://"):

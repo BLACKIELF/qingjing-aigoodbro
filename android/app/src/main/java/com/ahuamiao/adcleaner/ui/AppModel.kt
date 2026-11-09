@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -78,6 +79,12 @@ class AppModel(
         private set
     var newVersion by mutableStateOf<NewVersion?>(null)
         private set
+    var checkingUpdate by mutableStateOf(false)
+        private set
+    var updateMessage by mutableStateOf<String?>(null)
+        private set
+    private var showUpdateResult = false
+
     /** 首次设置的三步与「第几步」都来自 view.py，页面和通知栏读同一份（#646）。 */
     var setup by mutableStateOf(SetupGuide())
         private set
@@ -131,8 +138,8 @@ class AppModel(
                 screen = Screen.Failed(e.message.orEmpty())
                 return@flow
             }
+            checkForUpdate()
             runCatching { loadSetup() }     // 三步文案取不到不该把整个 App 钉在失败页，refreshOnce 会再试
-            launch { loadExtras() }
             // 执行期间界面可能被系统回收：重新打开时后台的执行还在跑，接回执行页
             val run = runCatching { poll(0) }.getOrNull()
             if (run != null && run.running) { userRun = backend === engine; follow() } else refresh()
@@ -145,11 +152,41 @@ class AppModel(
         syncSetupNotice()
     }
 
-    private suspend fun loadExtras() {
-        runCatching {
-            val o = backend.call("latest_version") as? JSONObject ?: return@runCatching
-            val v = o.optString("version")
-            if (v.isNotEmpty()) newVersion = NewVersion(v, o.optString("url"))
+    fun checkForUpdate(manual: Boolean = false) {
+        if (manual) showUpdateResult = true
+        if (checkingUpdate) return
+        checkingUpdate = true
+        updateMessage = null
+        scope.launch {
+            try {
+                val result = backend.call("check_update") as? JSONObject
+                when (result?.optString("status")) {
+                    "available" -> {
+                        val availableVersion = result.optString("version")
+                        val url = result.optString("url")
+                        if (availableVersion.isNotEmpty() && url.isNotEmpty()) {
+                            newVersion = NewVersion(availableVersion, url)
+                            if (showUpdateResult) updateMessage = "发现新版本 $availableVersion"
+                        } else if (showUpdateResult) {
+                            updateMessage = "无法检查更新，请稍后重试。"
+                        }
+                    }
+                    "current" -> {
+                        newVersion = null
+                        if (showUpdateResult) updateMessage = "已是最新版本"
+                    }
+                    else -> if (showUpdateResult) {
+                        updateMessage = "无法检查更新，请稍后重试。"
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (showUpdateResult) updateMessage = "无法检查更新，请稍后重试。"
+            } finally {
+                checkingUpdate = false
+                showUpdateResult = false
+            }
         }
     }
 
@@ -245,9 +282,9 @@ class AppModel(
     /** 用户先确认范围，之后只自动选引擎已判定安全的项目。 */
     fun confirmSuperClean() {
         notice = Notice(
-            "超级清静",
+            "一键清静",
             "将检测并关闭支持的广告和推荐开关、明确的营销通知，挂起已识别的广告组件并关闭可处理的快应用。快应用可能影响你常用的入口；系统服务保留项不会挂起。开始前会保存快照，改动可从「还原」恢复。仅自动运行机型和系统版本均匹配的脚本。",
-            confirm = "开始超级清静", onConfirm = { superClean() }, dismiss = "取消",
+            confirm = "开始清理", onConfirm = { superClean() }, dismiss = "取消",
         )
     }
 

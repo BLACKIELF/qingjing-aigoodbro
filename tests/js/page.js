@@ -37,6 +37,7 @@ async function openPage({ api = {} } = {}) {
     env: () => ({ version: "test", adb: false }),
     adb_info: () => ({ path: null, source: "none" }),
     latest_version: () => null,
+    check_update: () => ({ status: "current" }),
     poll: () => pollResult(),
     ...api,
   };

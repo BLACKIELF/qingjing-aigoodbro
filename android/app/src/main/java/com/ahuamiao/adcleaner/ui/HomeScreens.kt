@@ -6,8 +6,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,17 +46,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -90,20 +81,9 @@ fun FailedScreen(reason: String) {
     }
 }
 
-private val HomeShapes by lazy {
-    listOf(
-        MaterialShapes.Cookie12Sided, MaterialShapes.Sunny, MaterialShapes.Clover8Leaf,
-        MaterialShapes.Flower, MaterialShapes.SoftBurst, MaterialShapes.Cookie9Sided,
-    )
-}
-
 @Composable
 fun HomeScreen(model: AppModel) {
-    val haptic = LocalHapticFeedback.current
     val colors = MaterialTheme.colorScheme
-    val press = remember { MutableInteractionSource() }
-    val pressed by press.collectIsPressedAsState()
-    var shapeAt by rememberSaveable { mutableIntStateOf(0) }
     val device = model.device
 
     HeroPage(
@@ -130,35 +110,17 @@ fun HomeScreen(model: AppModel) {
                         .weight(1f)
                         .padding(start = 8.dp),
                 )
-                Box {
-                    IconButton(onClick = { model.sheet = Sheet.More }, shapes = IconButtonDefaults.shapes()) {
-                        Glyph(R.drawable.ic_more_horiz, label = "更多")
-                    }
-                    if (model.newVersion != null) {
-                        Box(
-                            Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(10.dp)
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(colors.error),
-                        )
-                    }
-                }
+                MoreButton(model)
             }
         },
         middle = { maxWidth, maxHeight ->
             val size = min(maxWidth * 0.72f, maxHeight - 112.dp)
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Hero(
-                    polygon = HomeShapes[shapeAt],
+                    polygon = MaterialShapes.Cookie12Sided,
                     color = colors.primaryContainer,
                     modifier = Modifier.size(size),
-                    pressed = pressed,
-                    onTap = {
-                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        shapeAt = (shapeAt + 1) % HomeShapes.size
-                    },
+                    spin = false,
                 ) {
                     Glyph(R.drawable.ic_ad_off, Modifier.size(size * 0.36f))
                 }
@@ -179,34 +141,33 @@ fun HomeScreen(model: AppModel) {
         },
         actions = {
             SizedButton(
-                text = "超级清静",
+                text = "一键清静",
                 onClick = model::confirmSuperClean,
                 modifier = Modifier.fillMaxWidth(),
                 height = ctaHeight(),
             )
             Spacer(Modifier.height(8.dp))
-            SizedButton(
-                text = "手动选择去广告",
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    model.oneTap()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                height = ctaHeight(),
-                interactionSource = press,
-                tonal = true,
-            )
-            Spacer(Modifier.height(8.dp))
-            SizedButton(
-                text = "还原",
-                onClick = model::openRestore,
-                modifier = Modifier.fillMaxWidth(),
-                icon = R.drawable.ic_history,
-                tonal = true,
-            )
-            Spacer(Modifier.height(8.dp))
         },
     )
+}
+
+@Composable
+private fun MoreButton(model: AppModel) {
+    Box {
+        IconButton(onClick = { model.sheet = Sheet.More }, shapes = IconButtonDefaults.shapes()) {
+            Glyph(R.drawable.ic_more_horiz, label = "更多")
+        }
+        if (model.newVersion != null) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.error),
+            )
+        }
+    }
 }
 
 // ---------- 首次设置 ---------- //
@@ -217,7 +178,7 @@ fun SetupScreen(model: AppModel, state: String, host: HostActions) {
     val steps = model.setup.steps
     when {
         // 三步清单还没从 view.py 取到：还不知道这一步该说什么（只有演示路径会碰上）
-        at == null -> if (steps.isEmpty()) BootScreen() else StatusScreen(state, host)
+        at == null -> if (steps.isEmpty()) BootScreen() else StatusScreen(model, state, host)
         at > steps.lastIndex -> BootScreen()
         else -> SetupSteps(model, at, host)
     }
@@ -247,6 +208,7 @@ private fun SetupSteps(model: AppModel, at: Int, host: HostActions) {
                 LargeFlexibleTopAppBar(
                     title = { Text("先做 3 个设置", style = MaterialTheme.typography.displaySmallEmphasized) },
                     subtitle = { Text("只做一次，约 1 分钟") },
+                    actions = { MoreButton(model) },
                     colors = pageBarColors(),
                     scrollBehavior = bar,
                 )
@@ -371,10 +333,13 @@ private fun statusCopy(state: String) = when (state) {
 }
 
 @Composable
-private fun StatusScreen(state: String, host: HostActions) {
+private fun StatusScreen(model: AppModel, state: String, host: HostActions) {
     val copy = statusCopy(state)
     val colors = MaterialTheme.colorScheme
     Page {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            MoreButton(model)
+        }
         Column(
             modifier = Modifier
                 .weight(1f)
