@@ -51,7 +51,8 @@ jobs:
       - name: Verify signature and application identity
         run: |
           mkdir -p delivery
-          cp "$QINGJING_ANDROID_BUILD_DIR/outputs/apk/release/app-release.apk" delivery/Qingjing-AiGoodBro-1.0.3-1108v4-android-arm64.apk
+          version="$(python gui/version.py)"
+          cp "$QINGJING_ANDROID_BUILD_DIR/outputs/apk/release/app-release.apk" "delivery/Qingjing-AiGoodBro-$version-1109v1-android-arm64.apk"
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs delivery/*.apk
           "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging delivery/*.apk | tee delivery/android-package-info.txt
           grep -q "package: name='com.aigoodbro.qingjing'" delivery/android-package-info.txt
@@ -59,6 +60,6 @@ jobs:
           sha256sum *.apk > SHA256SUMS-android.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Qingjing-AiGoodBro-android-1108v4
+          name: Qingjing-AiGoodBro-android-1109v1
           path: delivery/
           if-no-files-found: error
