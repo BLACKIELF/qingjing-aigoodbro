@@ -3,15 +3,15 @@
 #   gui/build_mac.sh                      Apple 芯片版，不签名（自己测）
 #   ARCH=x86_64 gui/build_mac.sh          Intel 版（在 Apple 芯片的 Mac 上要装 Rosetta）
 #   SIGN_ID="Developer ID Application: 名字 (TEAMID)" NOTARY_PROFILE=钥匙串公证配置名 gui/build_mac.sh
-# 产物：gui/dist/<架构>/清静 · AiGoodBro.app、gui/dist/AndroidAdCleaner-<版本>-mac-<arm64|intel>.dmg
+# 产物：gui/dist/<架构>/清静 · AiGoodBro.app、gui/dist/Qingjing-AiGoodBro-<版本>-1112v1-mac-<arm64|intel>.dmg
 set -eo pipefail
 cd "${0:A:h}/.."
 ARCH=${ARCH:-arm64}
 NAME="清静 · AiGoodBro"
 if [ "$ARCH" = "x86_64" ]; then
-  VENV=gui/.venv-x86; RUN=(arch -x86_64); TAG=intel; PYVER=cpython-3.12-macos-x86_64
+  VENV=gui/.venv-x86; RUN=(arch -x86_64); TAG=intel; PYVER=cpython-3.12-macos-x86_64; HDC_PLATFORM=mac-x64
 else
-  VENV=gui/.venv; RUN=(); TAG=arm64; PYVER=cpython-3.12-macos-aarch64
+  VENV=gui/.venv; RUN=(); TAG=arm64; PYVER=cpython-3.12-macos-aarch64; HDC_PLATFORM=mac-arm64
 fi
 if [ ! -x $VENV/bin/python ]; then
   # 只用 uv 自带的 Python（最低 macOS 11）。Homebrew 的 Python 按本机系统编译，0.2.0–0.2.3 的 Intel 包因此要求 macOS 26（#103）。
@@ -23,22 +23,28 @@ if [ "$($PY -c 'import sysconfig;print(int(sysconfig.get_config_var("MACOSX_DEPL
   echo "$VENV 的 Python 要求高于 macOS 11，删掉 $VENV 后重跑" >&2; exit 1
 fi
 VER=$($PY -c "import re;print(re.search(r'VERSION = \"([^\"]+)\"', open('gui/app.py', encoding='utf-8').read()).group(1))")
-OUT=gui/dist/$ARCH
-rm -rf gui/build/$ARCH $OUT; mkdir -p gui/build
-DATA="$PWD/gui/build/$ARCH/data"
-$PY gui/bundle_data.py "$DATA"
+RELEASE_DIR=gui/dist/release-1112v1
+BUILD_DIR=gui/build/release-1112v1/$ARCH
+OUT=$RELEASE_DIR/$ARCH
+mkdir -p "$BUILD_DIR" "$OUT"
+DATA="$PWD/$BUILD_DIR/data"
+# HDC 不入库：先按平台取到缓存并复制进 vendor，再让 bundle_data 收进打包资源（#898）
+# stage 要 hdc_fetch.PLATFORMS 的键（mac-arm64 / mac-x64），不是机器架构名（#1050）
+$PY gui/hdc_fetch.py stage "$PWD" "$HDC_PLATFORM"
+$PY gui/bundle_data.py "$DATA" "$ARCH"
 $RUN $PY -m PyInstaller --noconfirm --windowed --name "$NAME" \
-  --distpath $OUT --workpath gui/build/$ARCH --specpath gui/build/$ARCH \
+  --distpath $OUT --workpath "$BUILD_DIR" --specpath "$BUILD_DIR" \
   --osx-bundle-identifier com.aigoodbro.qingjing \
   --icon "$PWD/gui/icon.icns" \
   --add-data "$DATA/licenses:licenses" --add-data "$DATA/LICENSE:." --add-data "$DATA/tool:tool" --add-data "$DATA/recipes:recipes" \
   --add-data "$DATA/images:images" --add-data "$DATA/gui/web:gui/web" \
+  --add-data "$DATA/harmony:harmony" \
   --collect-all uiautomator2 --collect-all adbutils \
   --hidden-import uiautomator2 --hidden-import adbutils --hidden-import PIL --hidden-import fcntl \
   gui/launch.py >/dev/null 2>gui/build/pyinstaller-$ARCH.log
 APP="$OUT/$NAME.app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1109.1" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1112.1" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 11.0" "$APP/Contents/Info.plist"
 # 包里任何一个库要求高于 macOS 11，旧系统就打不开：发布前拦下
 # 逐个文件查：vtool 遇到非 Mach-O 文件会返回错误，直接交给 xargs 会让它中途停下、漏查。
@@ -55,6 +61,9 @@ if [ -z "$SIGN_ID" ]; then
 fi
 
 if [ -n "$SIGN_ID" ]; then
+  for f in "$APP"/Contents/Resources/harmony/desktop/vendor/*/*; do
+    codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$f"
+  done
   codesign --force --deep --options runtime --timestamp --sign "$SIGN_ID" "$APP"
   if [ "$ARCH" = "x86_64" ]; then
     # PyObjC/libffi 的 Intel 回调桩需要此权限；只签主程序，不给所有嵌套库放宽权限。
@@ -62,16 +71,16 @@ if [ -n "$SIGN_ID" ]; then
   fi
   codesign --verify --deep --strict "$APP"
   if [ -n "$NOTARY_PROFILE" ]; then          # App 本身先公证并钉上凭证：用户离线打开也能通过检查
-    ZIP="gui/build/$ARCH/app.zip"
+    ZIP="$BUILD_DIR/app.zip"
     ditto -c -k --keepParent "$APP" "$ZIP"
     xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait | grep -E "status:|id:" | tail -2
     xcrun stapler staple "$APP" | tail -1
   fi
 fi
 
-DMG="gui/dist/Qingjing-AiGoodBro-$VER-1109v1-mac-$TAG.dmg"
+DMG="$RELEASE_DIR/Qingjing-AiGoodBro-$VER-1112v1-mac-$TAG.dmg"
 rm -f "$DMG"
-STAGE="gui/build/$ARCH/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
+STAGE="$BUILD_DIR/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/应用程序"
 hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null 2>&1
 if [ -n "$SIGN_ID" ]; then

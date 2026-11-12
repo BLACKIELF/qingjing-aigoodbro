@@ -26,6 +26,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +74,7 @@ fun SheetHost(model: AppModel) {
         )
         ModalBottomSheet(onDismissRequest = { model.sheet = null }, sheetState = state) {
             when (sheet) {
+                is Sheet.Update -> UpdateSheet(model)
                 is Sheet.More -> MoreSheet(model)
                 is Sheet.About -> AboutSheet(model)
                 is Sheet.Support -> SupportSheet()
@@ -119,14 +122,14 @@ private fun MoreSheet(model: AppModel) {
         Segments {
             if (newer != null) {
                 SegmentedListItem(
-                    onClick = { model.openUrl(newer.url) },
+                    onClick = model::openUpdates,
                     shapes = ListItemDefaults.segmentedShapes(i++, rows),
                     colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                     leadingContent = { Glyph(R.drawable.ic_system_update) },
-                ) { Text("有新版本 ${newer.version}") }
+                ) { Text(if (newer != null) "有新版本 ${newer.version}" else "检查更新") }
             }
             SegmentedListItem(
-                onClick = { model.checkForUpdate(manual = true) },
+                onClick = model::openUpdates,
                 enabled = !model.checkingUpdate,
                 shapes = ListItemDefaults.segmentedShapes(i++, rows),
                 leadingContent = { Glyph(R.drawable.ic_system_update) },
@@ -547,4 +550,44 @@ fun NoticeHost(model: AppModel) {
             }
         },
     )
+}
+
+
+@Composable
+private fun UpdateSheet(model: AppModel) {
+    val state = model.update
+    val busy = state.optBoolean("busy")
+    val version = state.optString("version")
+    SheetBody {
+        SheetTitle(if (version.isEmpty()) "检查更新" else "更新到 $version")
+        Text("当前版本 ${model.version}。更新会保留数据和备份。")
+        Spacer(Modifier.height(12.dp))
+        if (state.optString("state") == "downloading") {
+            val total = state.optLong("size", 1).coerceAtLeast(1)
+            val progress = (state.optLong("received").toFloat() / total).coerceIn(0f, 1f)
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            Text("正在下载 ${(progress * 100).toInt()}%")
+        } else if (busy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text(if (state.optString("state") == "checking") "正在检查更新…" else "正在准备更新…")
+        }
+        state.optString("message").takeIf { it.isNotEmpty() }?.let { Text(it) }
+        state.optString("previous_error").takeIf { it.isNotEmpty() }?.let { Text("上次更新：$it", color = MaterialTheme.colorScheme.error) }
+        state.optString("error").takeIf { it.isNotEmpty() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (state.optBoolean("can_install")) {
+                Button(onClick = model::installUpdate) { Text("安装更新") }
+            } else if (state.optBoolean("can_download")) {
+                Button(onClick = model::downloadUpdate) { Text("下载更新") }
+            }
+            if (state.optBoolean("can_cancel")) {
+                TextButton(onClick = model::cancelUpdate) { Text("取消下载") }
+            }
+            if (!busy) {
+                TextButton(onClick = model::checkUpdates) { Text("重新检查") }
+            }
+        }
+        Text("系统会请你确认安装，不需要卸载旧版。", style = MaterialTheme.typography.bodySmall)
+    }
 }

@@ -1,39 +1,17 @@
-# 小米 HyperOS 4 机型脚本：Xiaomi 18 Pro Max（M154FF）、Xiaomi 18 Fold（2608BPX34C）
+# 小米 HyperOS 4 机型脚本：Xiaomi 18 Pro Max（M154FF）、Xiaomi 18 Fold（2608BPX34C）、REDMI K90（2510DRK44C）
 # 路径来源：18 Pro Max 2026-10-22 实测（OS4.0.24）；18 Fold 2026-10-24 社区实测（Issue #2，CP2A.260605.016）。
-# 两台系统底包相同（CP2A.260605.016），App 版本不同时页面不同：每一步都兼容新旧两种入口，找不到就跳过。
+# 三台系统底包相同（CP2A.260605.016），App 版本不同时页面不同：每一步都兼容新旧两种入口，找不到就跳过。
+# K90（OS4.0.5.0.XPKCNXM）按 2026-11-10 社区实测登记（Issue #929）：借这份脚本跑通九段中的八段，
+# 主题段要先挂起 com.miui.systemAdSolution；本仓库未在该机复跑。
+# 登记的含义是这台机先按本型号直选（recipe_for），不再转去按版本挑同族脚本——#969 修完也一样。
 # 用法：python3 tool/run.py -s 序列号 recipe [段名…]   不带段名=全跑
 BUILD = "OS4.0"
-MODELS = ["M154FF", "2608BPX34C"]
+MODELS = ["M154FF", "2608BPX34C", "2510DRK44C"]
 import time
+from entries import THEME_DEAD_ENDS
 
+# 注入面的 opened() 从这里取 adb_link.DeviceLost
 import adb_link
-
-
-def gear(toolbar_only=False):
-    """很多小米 App 的设置是右上角齿轮图标，没有文字。
-    匹配只认正好是「设置」的描述、正文或 setting 类 id：商店「我的」页有一行正文「去功能设置里
-    重新开启」，主题商店有「设置壁纸」，按包含匹配会先命中它们、点进别的子页，整段跑空（#305 / #374）。"""
-    from fast import bounds, icon_hit
-
-    for n in p.tree().iter("node"):
-        l, t, r, b = bounds(n)
-        icon = "ImageView" in n.get("class", "") and r-l < p.W * 0.25 and b-t < p.H * 0.15
-        if icon_hit(n) and (n.get("clickable") == "true" or icon) and p.on_screen(n) and (not toolbar_only or b < p.H * 0.23):
-            p.click((l + r) // 2, (t + b) // 2); time.sleep(1)
-            return True
-    if not toolbar_only and p.find("设置", exact=True, edge_ok="tab"):
-        return p.tap("设置", exact=True, scrolls=0)
-    # 下载管理、天气和日历的齿轮藏在右上「更多」菜单里。
-    for n in p.tree().iter("node"):
-        key = (n.get("content-desc") or "") + " " + (n.get("resource-id") or "")
-        from fast import bounds
-        l, t, r, b = bounds(n)
-        if any(k in key.lower() for k in ("更多", "more", "menu")) and n.get("clickable") == "true" and p.on_screen(n) and b < p.H * 0.22:
-            p.click((l + r) // 2, (t + b) // 2); time.sleep(0.5)
-            if p.tap("设置", exact=True, scrolls=0):
-                return True
-            break
-    return False
 
 
 def browser_settings():
@@ -51,26 +29,6 @@ def browser_settings():
             p.settle(before, 1.5)
             return gear()
     return False
-
-
-def opened(start):
-    """试一条直达页面：到了返回真。18 Fold 这类版本不同的机器可能没有这一页，返回假走菜单；
-    断线照常上抛——跑到一半掉线时 Phone 只置 lost、抛的是普通 RuntimeError（#293）。"""
-    try:
-        start()
-        return True
-    except adb_link.DeviceLost:
-        raise
-    except RuntimeError as e:
-        if p.lost:
-            raise
-        print(f"  · 直达不通（{e}），走菜单")
-        return False
-
-
-def tap_any(*names, scrolls=6):
-    """依次试几个入口名，点中一个就返回 True。"""
-    return any(maybe(n, scrolls) for n in names)
 
 
 @step("系统广告")
@@ -139,16 +97,27 @@ def _():
 
 @step("主题")
 def _():
-    # HyperOS 4 桌面入口在 themestore，打开后转到 thememanager；后者本身没有 LAUNCHER。
-    if "package:" in p.d.shell("pm path com.miui.themestore").output:
-        p.start("com.miui.themestore", foreground="com.android.thememanager")
-    else:
-        # 没有主题商店时直接起 thememanager：它没有 LAUNCHER activity，monkey 拉不起来（#730）
-        if "package:" not in p.d.shell("pm path com.android.thememanager").output:
-            print("  · 本机没有主题商店，跳过"); return
-        p.start("com.android.thememanager", ".ThemeResourceProxyTabActivity")
-    p.go("我的", "设置")
-    gear()
+    # 直达主题管理包的代理页（沿用 #730 的做法：它没有 LAUNCHER，monkey 拉不起来）；经主题商店冷启动
+    # 要过一道重定向过渡窗，前台校验容易误判，也可能续在上次留下的子页上（#906）。
+    # 落点被系统转去商店详情页或桌面时仍按跳过收尾。
+    if "package:" not in p.d.shell("pm path com.android.thememanager").output:
+        print("  · 本机没有主题管理包，跳过"); return
+    start_or_skip("com.android.thememanager", ".ThemeResourceProxyTabActivity",
+                  dead_ends=THEME_DEAD_ENDS, reason="主题页打不开")
+    # 导航失败以前与「本页没有目标开关」同形：进「我的」、进设置页、点名开关三步都校验，
+    # 0 个开关按失败报并带页面现场（#906）。
+    if not p.go("我的", "设置"):
+        raise RuntimeError("未进入主题「我的」；" + p.page_evidence())
+    if not gear():
+        raise RuntimeError("主题设置入口没找到；" + p.page_evidence())
+    p.await_page()                              # 齿轮点完这一页可能还没画完
+    before = {}
+    for _ in range(2):                          # 行也可能在首屏之下，off() 自己会翻页找
+        before.update({title: on for title, on, _ in p.switches()})
+        if not p.scroll_more():
+            break
+    p.top(2)
+    require_switches(before, ["每次联网时通知"], "主题·设置", contains=True)
     p.off(only=["每次联网时通知"], keep=["自动更新"], page="主题·设置")
     if maybe("隐私设置"):
         p.off(only=["个性化推荐"], page="主题·隐私"); p.back()

@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tool"))
 import fast
-from fixtures import Clock, fake_phone, install_clock, load_tool, phone_stub
+from fixtures import Clock, clocked, fake_phone, load_tool, phone_stub
 
 SIZE = (1080, 2340)
 ROWS = (("猜你喜欢", False), ("限制广告跟踪", True), ("应用推荐", False))
@@ -32,7 +32,7 @@ def page(titles, states, tops, dialog=False):
         f'<node text="{title}" bounds="[80,{top + 40}][700,{top + 120}]"/>'
         f'<node class="android.widget.Switch" checkable="true" checked="{str(on).lower()}"'
         f' bounds="[900,{top + 40}][1000,{top + 120}]"/></node>'
-        for title, on, top in zip(titles, states, tops))
+        for title, on, top in zip(titles, states, tops, strict=True))    # tops 由 len(titles) 生成，states 与 ROWS 同长
     overlay = ('<node class="android.widget.Button" content-desc="取消" clickable="true" bounds="[80,1850][420,2050]"/>'
                '<node class="android.widget.Button" content-desc="确定" clickable="true" bounds="[420,1850][760,2050]"/>'
                ) if dialog else ""
@@ -113,9 +113,7 @@ class ShrinkingDevice(TitleOnlyDevice):
 class TitleFallbackTests(unittest.TestCase):
     def setUp(self):
         load_tool()
-        self.addCleanup(setattr, fast, "time", fast.time)      # 假时钟装进模块后要还原
-        self.clock = Clock(read_cost=0.0)
-        install_clock(fast, self.clock)
+        self.clock = clocked(self, fast, Clock(read_cost=0.0))
         self.clicks, self.backs = [], []
 
     def phone(self, device):
@@ -127,7 +125,7 @@ class TitleFallbackTests(unittest.TestCase):
             self.backs.append("back")
             self.clock.click()
         p = fake_phone(clock=self.clock, size=SIZE, click=click, d=device, back=back, say=Mock())
-        p.focus = lambda: device.focus        # focus 这条时间轴由设备自己管：标题可能点进详情页
+        p.screen.focus = lambda: device.focus        # focus 这条时间轴由设备自己管：标题可能点进详情页
         return p
 
     def test_a_body_that_does_nothing_falls_back_to_the_row_title(self):
@@ -186,7 +184,7 @@ class TitleFallbackTests(unittest.TestCase):
         done = p.off(page="页", only=["猜你喜欢"])
         self.assertEqual((done, p.changed), (0, []))
         self.assertEqual(len(self.backs), 1)
-        self.assertTrue(any("  ✗ 关不掉 猜你喜欢" in c.args[0] for c in p.say.call_args_list))
+        self.assertTrue(any("  ✗ 关不掉 猜你喜欢" in c.args[0] for c in p.conn.say.call_args_list))
 
 
 class PickTitleRowsTests(unittest.TestCase):

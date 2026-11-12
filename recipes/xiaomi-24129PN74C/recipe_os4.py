@@ -6,12 +6,13 @@
 # 与 xiaomi-M154FF（18 Pro Max）的差异，来自 Issue #193：
 #   1. 系统广告：隐私与安全 → 更多安全设置 里没有广告服务；广告服务是独立 Activity，可直接拉起
 #   2. 应用商店：底部标签文案是「我的，有新消息」，精确匹配「我的」找不到，后面的入口全部走空
-#   3. 浏览器：工具栏右上角那个「设置」图标打开的是首页编辑面板；真正的设置在底栏「菜单」里
+#   3. 浏览器：工具栏右上角那个「设置」图标打开的是首页编辑面板；真正的设置在底栏「菜单」里；
+#      底栏没有「菜单」时改在「我的」页里找设置（#833 / #900）
 #   4. 主题、手机管家、下载管理、全局搜索、负一屏、天气日历与参考脚本一致
 BUILD = "OS4.0"
 MODELS = ["24129PN74C"]
 import time
-from wait import until
+from entries import THEME_DEAD_ENDS
 
 from fast import bounds
 
@@ -53,30 +54,19 @@ def gear(toolbar_only=False):
     return False
 
 
-def tap_any(*names, scrolls=6):
-    """依次试几个入口名，点中一个就返回 True。"""
-    return any(maybe(n, scrolls) for n in names)
-
-
-def popup_row(text, timeout=3.0):
-    """屏幕下半段里文字正好是 text 的那一行：菜单弹窗从底部升起，工具栏上的同名图标在上半屏。"""
-    def row():
-        for t, (l, top, r, b), _n in p.texts():
-            if t == text and top > p.H * 0.3:
-                return (l + r) // 2, (top + b) // 2
-        return None
-    return until(row, timeout=timeout, poll=0.3, now=time.time, sleep=time.sleep)
-
-
 def menu_settings(tries=2):
     """底栏「菜单」→ 弹窗里的「设置」，点完必须认出设置页（#586）。
 
-    工具栏右上角也有一个叫「设置」的图标，点它打开的是首页编辑面板（页面布局 / 快捷网址 / 全网热榜）。
-    只点下半屏那一行；没落进设置页就退回来重开菜单再试，两次都不成就报当前页，不在面板上继续找。"""
-    stopped = ""
+    工具栏右上角也有一个叫「设置」的图标，弹窗还没画出来时按文字点会落到它上面、进首页编辑面板，
+    后面几页入口全部找不到，整段 0 项又不报错。所以只点下半屏那一行，且没落进设置页就退回来
+    重开菜单再试；两次都不成就报当前页，不在工具栏面板上继续找。
+    底栏没有「菜单」的机型（MIX Flip 2）返回 False，交给 browser_settings() 的「我的」入口（#833）。"""
+    stopped = None
     for _ in range(tries):
-        if not p.tap("菜单", exact=True, scrolls=0):
-            raise RuntimeError("浏览器底栏「菜单」未找到")
+        if not p.tap("菜单", exact=True, scrolls=0, quiet=True):
+            if stopped is None:
+                return False
+            raise RuntimeError(f"浏览器设置页没有打开；停在 {stopped}")
         xy = popup_row("设置")
         if not xy:
             raise RuntimeError(f"浏览器菜单里没有「设置」；停在 {p.focus()}")
@@ -84,11 +74,28 @@ def menu_settings(tries=2):
         p.click(*xy)
         p.settle(before, 1.5)
         if p.in_settings_page():
-            return
+            return True
         # 弹窗这一行在屏上才走到这里，所以按返回是收起弹窗或退出面板，不会离开浏览器首页
-        stopped = p.focus()
+        # focus 读不出前台时是空串，别让它被当成「还没进过弹窗」
+        stopped = p.focus() or "读不出前台"
         p.back()
     raise RuntimeError(f"浏览器设置页没有打开；停在 {stopped}")
+
+
+def browser_settings():
+    """底栏「菜单」→ 弹窗「设置」；底栏没有「菜单」的机型在「我的」页里找设置（#833）。
+
+    Xiaomi 15 一般是 主页/视频/AI搜索/菜单/我的，但 HyperOS 4 的新版本可能没有「菜单」（#900）；
+    MIX Flip 2 是 主页/视频/AI搜索/免费小说/我的。两条入口点完都要认出设置页；「我的」那条没
+    进去时报出停在哪一页，不在旧页上继续找「隐私和安全」等子项（#586）。"""
+    if menu_settings():
+        return
+    print("  · 底栏没有「菜单」，改走「我的」→ 设置", flush=True)
+    if not p.tab("我的"):
+        raise RuntimeError(f"浏览器底部没有「菜单」，也没有「我的」标签；停在 {p.focus()}")
+    p.dismiss()                       # 「我的」页可能先弹一键登录框，盖住齿轮
+    if not gear():
+        raise RuntimeError(f"浏览器设置页没有打开；停在 {p.focus()}")
 
 
 def gear_top():
@@ -175,16 +182,27 @@ def _():
 
 @step("主题")
 def _():
-    # 桌面入口在 themestore，打开后转到 thememanager；后者本身没有 LAUNCHER
-    if "package:" in p.d.shell("pm path com.miui.themestore").output:
-        p.start("com.miui.themestore", foreground="com.android.thememanager")
-    else:
-        # 没有主题商店时直接起 thememanager：它没有 LAUNCHER activity，monkey 拉不起来（#730）
-        if "package:" not in p.d.shell("pm path com.android.thememanager").output:
-            print("  · 本机没有主题商店，跳过"); return
-        p.start("com.android.thememanager", ".ThemeResourceProxyTabActivity")
-    p.go("我的", "设置")
-    gear()
+    # 直达主题管理包的代理页（沿用 #730 的做法：它没有 LAUNCHER，monkey 拉不起来）；经主题商店冷启动
+    # 要过一道重定向过渡窗，前台校验容易误判，也可能续在上次留下的子页上（#906）。
+    # 落点被系统转去商店详情页或桌面时仍按跳过收尾。
+    if "package:" not in p.d.shell("pm path com.android.thememanager").output:
+        print("  · 本机没有主题管理包，跳过"); return
+    start_or_skip("com.android.thememanager", ".ThemeResourceProxyTabActivity",
+                  dead_ends=THEME_DEAD_ENDS, reason="主题页打不开")
+    # 导航失败以前与「本页没有目标开关」同形：进「我的」、进设置页、点名开关三步都校验，
+    # 0 个开关按失败报并带页面现场（#906）。
+    if not p.go("我的", "设置"):
+        raise RuntimeError("未进入主题「我的」；" + p.page_evidence())
+    if not gear():
+        raise RuntimeError("主题设置入口没找到；" + p.page_evidence())
+    p.await_page()                              # 齿轮点完这一页可能还没画完
+    before = {}
+    for _ in range(2):                          # 行也可能在首屏之下，off() 自己会翻页找
+        before.update({title: on for title, on, _ in p.switches()})
+        if not p.scroll_more():
+            break
+    p.top(2)
+    require_switches(before, ["每次联网时通知"], "主题·设置", contains=True)
     p.off(only=["每次联网时通知"], keep=["自动更新"], page="主题·设置")
     if maybe("隐私设置"):
         p.off(only=["个性化推荐"], page="主题·隐私"); p.back()
@@ -205,7 +223,8 @@ def _():
     # 底栏按钮是 ViewGroup，只认 80 毫秒短按；input tap 点了没反应
     # 工具栏右上角也有一个叫「设置」的图标，点它打开的是首页编辑面板（页面布局/快捷网址/全网热榜）；
     # 菜单里那个在同一行（头像/菜单编辑/分享/设置），menu_settings() 按 y 坐标排除顶部那个。
-    menu_settings()
+    # 底栏没有「菜单」的浏览器版本走「我的」→ 设置（#833；OS4 这份漏改，见 #900）。
+    browser_settings()
     if maybe("隐私和安全", scrolls=6):
         p.off(only=["个性化内容推荐", "个性化广告推荐"], page="浏览器·隐私和安全"); p.back()
     p.back(2)

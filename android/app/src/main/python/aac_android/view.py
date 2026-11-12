@@ -1,6 +1,7 @@
 """手机版界面要用的判断。放在 Python 是为了 CI 不连手机也测得到，Compose 那边只管画。
 
-桌面版同样的判断在 gui/web/index.html（summarize、showDetect、sendFeedback），改口径时两边都要看。
+桌面版同样的判断在 gui/web/index.html（showDetect、sendFeedback），改口径时两边都要看；
+结果摘要不在这里分叉，两个宿主共用 tool/summary.py 那一份（#1189）。
 """
 import json
 import os
@@ -9,6 +10,36 @@ import time
 from urllib.parse import quote
 
 BASE = ""       # 解出来的 aac/ 目录，boot() 填
+
+_summary = None
+
+# 机器行记号的主来源是 tool/summary.py 的 MACHINE_PREFIX（从 tool/events.py 的两个前缀现算）；
+# 这一份是「工具目录不在搜索路径」时的兜底：电脑上的替换层用例会 setup 一个只有脚本的假工具目录
+# （tests/test_android_shim.py），那里没有 tool/。tests/test_rules_guards.py 把它与事件前缀拴住。
+FALLBACK_MACHINE_PREFIX = "#aac:"
+
+
+def _summary_module():
+    """`tool/summary.py` 的懒加载 + 缓存（#1189）。这里不能在顶层 import：界面层先于工具目录
+    进入模块搜索路径被加载；执行前工具目录下的模块还会被清掉（inproc 的 `_purge`），
+    缓存让清掉之后不再重新加载。"""
+    global _summary
+    if _summary is None:
+        import summary
+        _summary = summary
+    return _summary
+
+
+def machine_prefix():
+    """引擎机器行的记号。日志分流器（inproc 的 `_Mirror`）在构造时取一次。
+
+    取不到 `tool/summary.py` 时用 `FALLBACK_MACHINE_PREFIX`：`_Mirror` 的构造点在 `inproc._top()`
+    的环境变量替换之后、`try` 之前，这个位置抛异常会把引擎的环境变量留在 App 进程里。
+    """
+    try:
+        return _summary_module().MACHINE_PREFIX
+    except ImportError:
+        return FALLBACK_MACHINE_PREFIX
 
 REPO = "https://github.com/BLACKIELF/qingjing-aigoodbro"
 URL_LIMIT = 7500        # 网址太长浏览器会截断
@@ -19,9 +50,12 @@ FEEDBACK = {"bug": ("bug_report.md", "[问题] "),
 CHECKLIST = {"OPPO": "OPPO-ColorOS.md", "ONEPLUS": "OPPO-ColorOS.md", "REALME": "OPPO-ColorOS.md",
              "HONOR": "荣耀-MagicOS.md",
              "XIAOMI": "小米-HyperOS.md", "REDMI": "小米-HyperOS.md", "POCO": "小米-HyperOS.md",
-             "VIVO": "vivo-OriginOS.md", "IQOO": "vivo-OriginOS.md"}
+             "VIVO": "vivo-OriginOS.md", "IQOO": "vivo-OriginOS.md",
+             "HUAWEI": "华为-HarmonyOS.md", "SAMSUNG": "三星-OneUI.md", "MEIZU": "魅族-Flyme.md"}
 CHECKLIST_NAME = {"OPPO-ColorOS.md": "OPPO / ColorOS", "荣耀-MagicOS.md": "荣耀 / MagicOS",
-                  "小米-HyperOS.md": "小米 / HyperOS", "vivo-OriginOS.md": "vivo / OriginOS"}
+                  "小米-HyperOS.md": "小米 / HyperOS", "vivo-OriginOS.md": "vivo / OriginOS",
+                  "华为-HarmonyOS.md": "华为 / HarmonyOS", "三星-OneUI.md": "三星 / One UI",
+                  "魅族-Flyme.md": "魅族 / Flyme"}
 
 AD_NAMES = {"com.opos.ads": "OPPO 广告服务",
             "com.heytap.pictorial": "OPPO 乐划锁屏（锁屏杂志）",
@@ -38,49 +72,9 @@ def _encode(text):
     return quote(text, safe="-_.!~*'()")
 
 
-def _run_summary(text, turned_off):
-    """「机型脚本跑完」那行只有关掉几个，另两类结局要从 tail 里数（#758）。
-
-    不动的项只认 `tool/fast.py` 的 `off()` 末尾那句「核对 X 项，调整 Y 项」：回读确认 /
-    调整 N 项 是各机型脚本自己写的、说法不统一，数不准。X−Y 要扣两档「没动但不是本来就
-    关着」的：灰态、以及「✗ 关不掉 / 打不开」。带外没点的行仍在 X 里（CONTEXT.md 的
-    「拨动计划」），归进「无需改动」。
-
-    几份 vivo / OPPO 脚本自打「✗ 关不掉」却不用核对行（V2547A、V2545A、V1986A、PKH110），
-    与 p.off() 的段混在一次运行里会被多扣；tail 只留最近 80 行（`gui/app.py` 的 `_log`），
-    日志更长时前几页少算。两处都只让这个数偏小，好过把没拨成说成没事。
-    """
-    parts = [f"关了 {turned_off} 个开关"]
-    same = sum(int(x) - int(y) for x, y in re.findall(r"核对 (\d+) 项，调整 (\d+) 项", text))
-    same -= text.count("被上级开关禁用（开关是灰的），未改动")
-    same -= len(re.findall(r"✗ (?:关不掉|打不开) ", text))
-    if same > 0:
-        parts.append(f"{same} 项核对过无需改动")
-    m = re.search(r"未完成步骤：(.*)", text)
-    if m:
-        names = [n.strip() for n in m.group(1).split("、") if n.strip()]
-        if names:
-            parts.append(f"{len(names)} 段未完成（{names[0]}{' 等' if len(names) > 1 else ''}）")
-    return "；".join(parts)
-
-
 def summarize(result):
-    """一步的结果用一句话说；认不出模式就取日志末行（所以机器行不能进 tail）。"""
-    tail = result.get("tail") or []
-    text = "\n".join(tail)
-    m = re.search(r"机型脚本跑完：关了 (\d+) 个，(\d+) 秒", text)
-    if m:
-        return _run_summary(text, int(m.group(1)))
-    m = re.search(r"拨了 (\d+) 个", text)
-    if m:
-        left = re.search(r"仍开着: (\d+) 个", text)
-        return f"关了 {m.group(1)} 个渠道" + (f"，复查仍开着 {left.group(1)} 个" if left else "")
-    if "快应用组件已关闭" in text:
-        return f"{len(re.findall(r'已关闭$', text, re.M))} 个组件已关闭"
-    if "快照已存" in text:
-        return "已保存"
-    lines = [line for line in tail if line]
-    return lines[-1] if lines else ""
+    """一步的结果用一句话说；实现只有一份，在 `tool/summary.py`（#1189，两个宿主共用）。"""
+    return _summary_module().summarize(result)
 
 
 def outcome(run):
@@ -116,13 +110,81 @@ class StallWatch:
 
 WATCH = StallWatch()
 
+# 这次跑的机型脚本验到什么程度：档位由引擎从台账现读，经 status-json 与任务快照原样带到
+# `recipe_coverage`（沿用 #1124 的两个字段），这里只把负面档位翻成一句人话，「全部」与没有值都不占行。
+# 桌面版同一件事在 gui/web/index.html 的 coverageNote：判据相同，分叉的只有措辞（手机版不劝人
+# 「去 App 里核对」）。
+COVERAGE_NOTES = {
+    "部分": "这套机型脚本只在一部分步骤上做过真机验证，其余步骤这次是照脚本直接跑的，建议顺手核对一眼。",
+    "未记录": "这套机型脚本没有真机验证记录，改动结果建议自己核对一遍。",
+}
 
-def poll(api, since=0):
+
+def coverage_note(run):
+    """结果页要不要为脚本的验证档位多一行；要说时给整句，不说时给空串（#1130）。
+
+    说不说的判据是「这次真有脚本那一行的结果」：没勾脚本、停止在它之前、读屏占用让它跳过时都不说，
+    拿别的步的结论去说脚本的事会误导。与桌面版同一条判据（gui/web/index.html 的 coverageNote）。
+    """
+    if not any(r.get("kind") == "recipe" and not r.get("skipped") for r in run.get("results") or []):
+        return ""
+    return COVERAGE_NOTES.get(run.get("recipe_coverage") or "", "")
+
+
+def _snapshot(api, since=0):
+    """与 poll 同一份口径，但不碰卡住计时：冒烟的导出与界面的轮询可能同时发生（#1072）。"""
     run = dict(api.poll(since))
     run["results"] = [{**r, "summary": summarize(r)} for r in run.get("results") or []]
     run["outcome"] = outcome(run)
+    run["coverage_note"] = coverage_note(run)
+    return run
+
+
+def poll(api, since=0):
+    run = _snapshot(api, since)
     run["stalled"] = WATCH.update(run)
     return run
+
+
+# 真机冒烟的 debug 导出（#1072）：一行 logcat 的写入上限约 4 KB，按字符数切中文会超三倍。
+EXPORT_LIMIT = 3000
+EXPORT_FIELDS = ("title", "rc", "skipped", "stopped", "sec", "summary")
+
+
+def _chunks(text, limit=EXPORT_LIMIT):
+    """按 UTF-8 字节数切块：中文一个字三个字节，按字符切会被 logd 截成半截 JSON（#1072）。"""
+    out, part, size = [], [], 0
+    for char in text:
+        width = len(char.encode())
+        if size + width > limit and part:
+            out.append("".join(part))
+            part, size = [char], width
+        else:
+            part.append(char)
+            size += width
+    if part:
+        out.append("".join(part))
+    return out
+
+
+def smoke_export(api, shell=""):
+    """这一轮执行结果与是否结束，给维护者的冒烟脚本（#1072）。
+
+    只留每一步的结果与摘要：日志行、每步的原始输出（`tail`）与上报载荷都不进来，它们要么在
+    logcat 里、要么只属于 App 自己。Kotlin 那边只负责把这些块打到 logcat，判断都在这里。
+    """
+    run = _snapshot(api, 0)
+    results = [{key: row.get(key) for key in EXPORT_FIELDS if key in row}
+               for row in run.get("results") or []]
+    finished = not run.get("running") and bool(results or run.get("cancel"))
+    payload = {"shell": shell, "finished": finished,
+               "run": {"running": bool(run.get("running")), "cancel": bool(run.get("cancel")),
+                       "idx": run.get("idx", 0), "total": run.get("total", 0),
+                       "title": run.get("title", ""), "sec": run.get("sec", 0),
+                       "outcome": run.get("outcome", ""), "recovery": run.get("recovery", ""),
+                       "results": results}}
+    return {"finished": finished, "running": bool(run.get("running")),
+            "chunks": _chunks(json.dumps(payload, ensure_ascii=False))}
 
 
 def _warnings(status, fold_block):
@@ -181,8 +243,11 @@ def _quickapp(status):
 
 
 def _ads(status):
+    """`default_on` 是选择页上要不要预先勾上（#973）：引擎侧已把「已挂起」算进去，
+    这里只透传，Compose 那边不按包名再判一次。"""
     ads = status.get("ads") or []
-    on = [{"pkg": a["pkg"], "name": AD_NAMES.get(a["pkg"], "系统广告组件")} for a in ads if not a.get("suspended")]
+    on = [{"pkg": a["pkg"], "name": AD_NAMES.get(a["pkg"], "系统广告组件"),
+           "default_on": bool(a.get("default_on"))} for a in ads if not a.get("suspended")]
     return on, "" if on else ("已挂起" if ads else "没有已知的")
 
 
@@ -302,4 +367,4 @@ def send_feedback(api, kind, text, diag):
 
 
 EXPORTS = {"poll": poll, "detect": detect, "brand_guide": brand_guide, "setup_guide": setup_guide,
-           "send_feedback": send_feedback}
+           "send_feedback": send_feedback, "smoke_export": smoke_export}

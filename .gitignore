@@ -27,3 +27,15 @@ node_modules/
 android/local.properties
 android/.gradle/
 android/app/build/
+
+# 构建期 HDC 与验证产物不入库
+gui/.venv-x86
+/harmony/desktop/vendor/*/hdc
+/harmony/desktop/vendor/*/hdc.exe
+/harmony/desktop/vendor/*/libusb_shared.dylib
+/harmony/desktop/vendor/*/libusb_shared.dll
+SHA256SUMS.txt
+.coverage
+coverage-*.data
+coverage.xml
+test-results/

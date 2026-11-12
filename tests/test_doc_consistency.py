@@ -120,7 +120,7 @@ class BrandTapsDocTests(unittest.TestCase):
                         "00 文档第二张表的表头被静默改掉了")
 
     def test_end_marker_indent_matches_start(self):
-        for key, path in gen.TARGETS.items():
+        for _key, path in gen.TARGETS.items():
             indents = {"start": set(), "end": set()}
             for line in path.read_text(encoding="utf-8").splitlines():
                 kind = "start" if line.strip() == gen.START else "end" if line.strip() == gen.END else None
@@ -140,7 +140,7 @@ class SiteCssTests(unittest.TestCase):
     def test_both_pages_carry_the_shared_block(self):
         css = site_css.load_css()
         self.assertIn("--paper:", css, "site.css 里没读到调色板，守卫会空转")
-        for key, path in site_css.TARGETS.items():
+        for _key, path in site_css.TARGETS.items():
             with self.subTest(page=path.name):
                 text = path.read_text(encoding="utf-8")
                 site_css.check_markers(text, path.name)
@@ -152,7 +152,7 @@ class SiteCssTests(unittest.TestCase):
         shared = [line for line in site_css.load_css().splitlines()
                   if line.strip() and not line.strip().startswith(("/*", "}"))]
         self.assertGreater(len(shared), 20, "共享块没读到规则行，守卫会空转")
-        for key, path in site_css.TARGETS.items():
+        for _key, path in site_css.TARGETS.items():
             outside = site_css.replace_region(path.read_text(encoding="utf-8"), "")
             with self.subTest(page=path.name):
                 self.assertEqual([line for line in shared if line in outside], [],

@@ -2,10 +2,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { openPage, pollResult, stepDone } = require("./page.js");
-/* 与手机版 aac_android/view.py 的 summarize() 同一批 tail、同一批期望串（#758）：
-   tests/test_android_view.py 读的是同一份文件，两处产出必须逐字相同。 */
-const SUMMARY_CASES = require("../summary_cases.json");
-
 function spyClearInterval(window) {
   const cleared = [];
   const original = window.clearInterval;
@@ -88,25 +84,25 @@ test("引擎还没收尾时不进完成页", async () => {
   } finally { page.close(); }
 });
 
-test("机型脚本摘要说清三类结局，与手机版逐字一致（#758）", async () => {
+/* 摘要由后端算（tool/summary.py，两个宿主共用，#1189）：结果页只渲染 results[].summary，
+   口径本身在 tests/test_summary.py 里跑共享样例集。这里只管字段原样画出来、缺字段时不留旧逻辑。 */
+test("完成页结果行只渲染后端给的摘要字段（#1189）", async () => {
   const page = await openPage();
   try {
-    for (const c of SUMMARY_CASES){
-      assert.equal(page.window.summarize({ tail: c.tail }), c.want, c.name);
-    }
-  } finally { page.close(); }
-});
-
-test("完成页摘要认不出模式时显示最后一条非空行", async () => {
-  const page = await openPage();
-  try {
-    assert.equal(page.window.summarize({ tail: ["开始执行", "人话：最后一句", ""] }), "人话：最后一句");
+    page.window.showDone(pollResult({ results: [
+      { title: "关闭各 App 里的广告开关", rc: 0, sec: 7, summary: "关了 26 个开关",
+        tail: ["机型脚本跑完：关了 26 个，210 秒"] },
+      { title: "收尾", rc: 0, sec: 1, tail: ["插电常亮已改回 1"] },
+    ]}));
+    const cells = [...page.document.querySelectorAll(".res .d")].map(n => n.textContent);
+    assert.equal(cells[0], "关了 26 个开关 · 7 秒");
+    assert.equal(cells[1], " · 1 秒", "没有 summary 就显示空串，不回退去读 tail");
   } finally { page.close(); }
 });
 
 test("没勾的项在完成页是一行「跳过」，不算失败（#577）", async () => {
   const notRun = { title: "关闭各 App 里的广告开关", rc: 0, sec: 0, skipped: true, stopped: false,
-                   tail: ["未勾选，本次没有执行"] };
+                   summary: "未勾选，本次没有执行", tail: ["未勾选，本次没有执行"] };
   const page = await openPage({ api: { poll: () => pollResult({ results: [stepDone, notRun] }) } });
   try {
     page.window.showRun();
@@ -137,19 +133,6 @@ test("真出错的跳过行仍然算失败（#577 不能掩盖它）", async () 
   } finally { page.close(); }
 });
 
-test("完成页摘要遇到空 tail 返回空串而不是 undefined", async () => {
-  const page = await openPage();
-  try {
-    assert.equal(page.window.summarize({ tail: ["", ""] }), "");
-  } finally { page.close(); }
-});
-
-test("完成页摘要认得快照已存", async () => {
-  const page = await openPage();
-  try {
-    assert.equal(page.window.summarize({ tail: ["快照已存：3 项"] }), "已保存");
-  } finally { page.close(); }
-});
 
 // 守卫用例：旧树也绿——单飞行自 #662 起就在，这里守的是它不回退（#698）
 test("上一次 poll 没回来时不发第二次（#698）", async () => {
@@ -261,4 +244,179 @@ test("没有可重试的步时结果页不给按钮（#638）", async () => {
       .find(b => b.textContent.includes("重试没成功的步骤"));
     assert.equal(button, undefined);
   } finally { page.close(); }
+});
+
+test("没标录制版本的机型脚本不说「版本一致」（#942）", async () => {
+  const status = {
+    info: { model: "25060RK16C", brand: "Redmi", name: "REDMI K80 Ultra", os: "",
+            build: "BP2A.250605.031.A3", android: "16" },
+    recipe: "recipes/redmi-25060RK16C/recipe.py", recipe_ref: false,
+    recipe_build: "", recipe_ok: true, steps: ["系统广告"],
+    ads: [], quickapps: [], locked: false, dev: false, backup: null,
+    fold_open: false, input_blocked: false, stay_on: "",
+  };
+  const page = await openPage({ api: { status: () => status } });
+  try {
+    page.window.eval("S.serial = 'X'");
+    await page.window.showDetect();
+    const kv = [...page.document.querySelectorAll(".kv")]
+      .find(n => n.textContent.includes("机型脚本"));
+    assert.match(kv.textContent, /录制版本未标/);
+    assert.doesNotMatch(kv.textContent, /版本一致/);
+  } finally { page.close(); }
+});
+
+/* #1129：结果页只在机型脚本验得不够时多一行。档位是引擎从台账现读、经 status-json 与任务快照
+   原样带来的，界面不自己算；「全部」（以及根本没有这个值时）不占行。说不说还要求这次真有脚本那一
+   行的结果，与手机版 aac_android/view.py 的 coverage_note() 同一条判据。 */
+const coverageNotes = page => [...page.document.querySelectorAll("#main .note.info")]
+  .map(n => n.textContent);
+const recipeStep = extra => ({ ...stepDone, title: "关闭各 App 里的广告开关", kind: "recipe", ...extra });
+
+test("机型脚本只验过一部分时，结果页多一行说明（#1129）", async () => {
+  const page = await openPage();
+  try {
+    page.window.showDone(pollResult({ results: [recipeStep()], recipe_coverage: "部分" }));
+    const notes = coverageNotes(page);
+    assert.equal(notes.length, 1, "负面档位要出现这一行");
+    assert.match(notes[0], /只在一部分步骤上做过真机验证/);
+    assert.doesNotMatch(notes[0], /tier|evidence|部分验证/, "文案不能露出取值名");
+  } finally { page.close(); }
+});
+
+test("机型脚本整份验过时，结果页不添任何行（#1129）", async () => {
+  const page = await openPage();
+  try {
+    page.window.showDone(pollResult({ results: [recipeStep()], recipe_coverage: "全部" }));
+    assert.deepEqual(coverageNotes(page), []);
+  } finally { page.close(); }
+});
+
+test("台账里没有这份脚本、或压根没检测过时，结果页照常显示（#1129）", async () => {
+  const page = await openPage();
+  try {
+    page.window.showDone(pollResult({ results: [recipeStep()], recipe_coverage: "未记录" }));
+    assert.equal(coverageNotes(page).length, 1);
+    // 没有 recipe_coverage（旧引擎 / 还没检测）时不猜深浅，也不崩
+    page.window.showDone(pollResult({ results: [recipeStep()] }));
+    assert.deepEqual(coverageNotes(page), []);
+    assert.equal(heading(page), "完成");
+  } finally { page.close(); }
+});
+
+test("这次没跑机型脚本时不说脚本的事（#1129）", async () => {
+  const page = await openPage();
+  try {
+    // 没勾脚本 / 停止在它之前 / 读屏被占用让它跳过：结果里只有那行「跳过」，或压根没有这一行
+    const skipped = recipeStep({ skipped: true, rc: 0, tail: ["没有勾选"] });
+    page.window.showDone(pollResult({ results: [skipped], recipe_coverage: "部分" }));
+    assert.deepEqual(coverageNotes(page), []);
+    page.window.showDone(pollResult({ results: [stepDone], recipe_coverage: "部分" }));
+    assert.deepEqual(coverageNotes(page), []);
+  } finally { page.close(); }
+});
+
+/* #973：选择页「挂起广告组件」的默认值来自 status-json 的 default_on ——
+   小米 msa 预先勾上，其他品牌不勾，已挂起的项根本不出勾选框（走「已经挂起」那句）。 */
+function chooseStatus(ads, over = {}) {
+  return {
+    info: { model: "2510DRK44C", brand: "Redmi", name: "REDMI K90", os: "OS4.0.5.0", build: "", android: "17" },
+    recipe: "xiaomi-M154FF/recipe.py", recipe_ref: false, recipe_ok: true, recipe_build: "OS4.0",
+    steps: ["主题"], ads, quickapps: [], locked: false, dev: false, backup: null,
+    fold_open: false, input_blocked: false, stay_on: "",
+    ...over,
+  };
+}
+
+async function openChoose(ads, over = {}) {
+  const status = chooseStatus(ads, over);
+  const page = await openPage({ api: { status: () => status, chan_scan: () => ({ chans: [], notes: [] }) } });
+  page.window.eval(`S.serial = "X"; S.status = ${JSON.stringify(status)}; S.chans = []; S.chanNotes = [];`);
+  await page.window.showChoose();
+  return page;
+}
+
+test("选择页：default_on 的广告包预先勾上（#973）", async () => {
+  const page = await openChoose([{ pkg: "com.miui.systemAdSolution", suspended: false, default_on: true }]);
+  try {
+    const boxes = [...page.document.querySelectorAll(".c-ad")];
+    assert.deepEqual(boxes.map(b => [b.value, b.checked]), [["com.miui.systemAdSolution", true]]);
+  } finally { page.close(); }
+});
+
+test("选择页：非默认广告包不勾，已挂起的 msa 不出勾选框（#973）", async () => {
+  const page = await openChoose([
+    { pkg: "com.opos.ads", suspended: false, default_on: false },              // 非小米：不预勾
+    { pkg: "com.miui.systemAdSolution", suspended: true, default_on: false },  // 小米已挂起：不出勾选框
+  ]);
+  try {
+    const boxes = [...page.document.querySelectorAll(".c-ad")];
+    assert.deepEqual(boxes.map(b => [b.value, b.checked]), [["com.opos.ads", false]]);
+    assert.match(page.document.querySelector("#main").textContent, /挂起只是暂停运行/);
+  } finally { page.close(); }
+});
+
+test("选择页：取消预勾后开始，计划里不含挂起（#973）", async () => {
+  const started = [];
+  const status = chooseStatus([{ pkg: "com.miui.systemAdSolution", suspended: false, default_on: true }]);
+  const page = await openPage({ api: {
+    status: () => status, chan_scan: () => ({ chans: [], notes: [] }),
+    start: (serial, plan) => { started.push(plan); return { ok: true, total: 1 }; },
+    poll: () => pollResult(),
+  } });
+  try {
+    page.window.eval(`S.serial = "X"; S.status = ${JSON.stringify(status)}; S.chans = []; S.chanNotes = [];`);
+    await page.window.showChoose();
+    page.document.querySelector(".c-ad").checked = false;
+    await page.window.go();
+    assert.deepEqual(Array.from(started[0].ads), []);
+  } finally {
+    page.window.eval("clearInterval(pollJob); pollJob = null");
+    page.close();
+  }
+});
+
+test("选择页：直接开始就把 msa 排进计划（#973）", async () => {
+  const started = [];
+  const status = chooseStatus([{ pkg: "com.miui.systemAdSolution", suspended: false, default_on: true }]);
+  const page = await openPage({ api: {
+    status: () => status, chan_scan: () => ({ chans: [], notes: [] }),
+    start: (serial, plan) => { started.push(plan); return { ok: true, total: 1 }; },
+    poll: () => pollResult(),
+  } });
+  try {
+    page.window.eval(`S.serial = "X"; S.status = ${JSON.stringify(status)}; S.chans = []; S.chanNotes = [];`);
+    await page.window.showChoose();
+    await page.window.go();
+    assert.deepEqual(Array.from(started[0].ads), ["com.miui.systemAdSolution"]);   // 跨 realm 的数组要先摊成 Node 的
+  } finally {
+    page.window.eval("clearInterval(pollJob); pollJob = null");
+    page.close();
+  }
+});
+
+test("没有机型脚本时，桌面版手动清单认三星、华为、魅族（#952）", async () => {
+  const urls = [];
+  const cases = [["samsung", "三星 / One UI ", "三星-OneUI.md"],
+                 ["huawei", "华为 / HarmonyOS ", "华为-HarmonyOS.md"],
+                 ["meizu", "魅族 / Flyme ", "魅族-Flyme.md"]];
+  for (const [brand, label, file] of cases) {
+    const status = {
+      info: { model: "X", brand, name: "Phone", os: "16", build: "", android: "16" },
+      recipe: null, recipe_ref: false, recipe_ok: false, recipe_build: "",
+      steps: [], ads: [], quickapps: [], locked: false, dev: false, backup: null,
+      fold_open: false, input_blocked: false, stay_on: "",
+    };
+    const page = await openPage({ api: { status: () => status, open_url: url => urls.push(url) } });
+    try {
+      page.window.eval("S.serial = 'X'");
+      await page.window.showDetect();
+      const link = [...page.document.querySelectorAll("#main a")]
+        .find(a => a.textContent.includes("手动清单"));
+      assert.equal(link.textContent, `${label}手动清单`);
+      link.dispatchEvent(new page.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+      assert.equal(urls.pop(), "https://github.com/BLACKIELF/qingjing-aigoodbro/blob/main/docs/"
+        + encodeURIComponent("清单") + "/" + encodeURIComponent(file));
+    } finally { page.close(); }
+  }
 });

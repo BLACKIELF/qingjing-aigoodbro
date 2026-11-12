@@ -12,43 +12,12 @@
 BUILD = "OS3.0.304.0"
 MODELS = ["24122RKC7C"]
 import time
+from entries import THEME_DEAD_ENDS
 VERIFIED_SWITCHES = 0
 
 
 def tap_any(*names, scrolls=6):
     return any(maybe(name, scrolls) for name in names)
-
-
-def gear(toolbar_only=False):
-    """很多小米 App 的设置是右上角齿轮图标，没有文字。
-    匹配只认正好是「设置」的描述、正文或 setting 类 id：商店「我的」页有一行正文「去功能设置里
-    重新开启」，主题商店有「设置壁纸」，按包含匹配会先命中它们、点进别的子页，整段跑空（#305 / #374）。"""
-    from fast import bounds, icon_hit
-
-    for n in p.tree().iter("node"):
-        l, t, r, b = bounds(n)
-        icon = "ImageView" in n.get("class", "") and r - l < p.W * 0.25 and b - t < p.H * 0.15
-        if (icon_hit(n) and (n.get("clickable") == "true" or icon) and p.on_screen(n)
-                and (not toolbar_only or b < p.H * 0.23)):
-            p.click((l + r) // 2, (t + b) // 2)
-            time.sleep(1)
-            return True
-    if not toolbar_only and p.find("设置", exact=True, edge_ok="tab"):
-        return p.tap("设置", exact=True, scrolls=0)
-    for n in p.tree().iter("node"):
-        key = (n.get("content-desc") or "") + " " + (n.get("resource-id") or "")
-        from fast import bounds
-        l, t, r, b = bounds(n)
-        if (any(k in key.lower() for k in ("更多", "more", "menu"))
-                and n.get("clickable") == "true" and p.on_screen(n) and b < p.H * 0.22):
-            p.click((l + r) // 2, (t + b) // 2)
-            time.sleep(0.5)
-            if p.tap("设置", exact=True, scrolls=0):
-                return True
-            break
-    return False
-
-
 def gear_tap(pkg, activity):
     """齿轮用引擎短按点不动时的兜底：同一次读屏里找到齿轮，改用 input tap（80 毫秒短按有的 App 会吞）。"""
     from fast import bounds
@@ -65,52 +34,14 @@ def gear_tap(pkg, activity):
     return False
 
 
-def security_tab():
-    """HyperOS 3 的「安全」是隐私页上方的标签，不是设置行。
-    按文字点会命中不可点击的标签文字；这里只点横跨半屏、位于顶部的可点击容器。"""
-    for text, (l, t, r, b), node in p.texts():
-        if (text == "安全" and node.get("clickable") == "true"
-                and r - l > p.W * 0.3 and t < p.H * 0.25):
-            p.click((l + r) // 2, (t + b) // 2)
-            time.sleep(0.8)
-            return True
-    return False
-
-
-def read_switches(max_screens):
-    current = {}
-    for index in range(max_screens):
-        current.update({title: on for title, on, _ in p.switches()})
-        if index + 1 == max_screens or not p.scroll_more():
-            break
-    return current
-
-
-def close_named(names, page, max_screens=2):
-    """只关闭点名的开关；操作前确认目标存在，操作后回读，并检查其他开关未被改动。
-    开关标题可能附带整段说明，所以按关键词匹配，不做完整标题相等判断。"""
-    global VERIFIED_SWITCHES
-    p.top(max_screens)
-    before = read_switches(max_screens)
-    targets = [title for title in before if any(name in title for name in names)]
-    require(all(any(name in title for title in targets) for name in names),
-            f"{page}：未识别全部目标开关，未操作")
-    p.top(max_screens)
-    p.off(only=names, page=page, max_screens=max_screens)
-    p.top(max_screens)
-    current = read_switches(max_screens)
-    require(all(current.get(title) is False for title in targets), f"{page}：回读未确认关闭")
-    require(all(current.get(title) == state for title, state in before.items() if title not in targets),
-            f"{page}：其他开关状态变化，请核对")
-    VERIFIED_SWITCHES += len(targets)
-
-
 def browser_start():
     """冷启动偶发被启动过渡窗判断成「离开前台」：先强停再直达 BrowserActivity，重试一次。"""
     for attempt in range(2):
         try:
             p.start("com.android.browser", ".BrowserActivity")
             return True
+        except SkipStep:
+            raise                 # App 本机没装：放行，不走下面那句按文案判的重试分支（#908）
         except RuntimeError as e:
             if attempt or "离开前台" not in str(e):
                 raise
@@ -178,12 +109,23 @@ def _():
 @step("主题")
 def _():
     # 主题商店冷启动会跳到 thememanager，引擎的前台校验会停段；直达代理标签页最稳。
-    if "package:" in p.d.shell("pm path com.android.thememanager").output:
-        p.start("com.android.thememanager", ".ThemeResourceProxyTabActivity")
-    else:
-        p.start("com.miui.themestore", foreground="com.android.thememanager")
-    require(p.tap("我的", exact=True, scrolls=0), "未找到主题「我的」")
-    require(gear(), "主题设置齿轮未找到")
+    if "package:" not in p.d.shell("pm path com.android.thememanager").output:
+        print("  · 本机没有主题管理包，跳过"); return
+    start_or_skip("com.android.thememanager", ".ThemeResourceProxyTabActivity",
+                  dead_ends=THEME_DEAD_ENDS, reason="主题页打不开")
+    # 导航失败不能与「本页没有目标开关」同形：三步都校验，报错带页面现场（#906）。
+    if not p.tap("我的", exact=True, scrolls=0):
+        raise RuntimeError("未找到主题「我的」；" + p.page_evidence())
+    if not gear():
+        raise RuntimeError("主题设置入口没找到；" + p.page_evidence())
+    p.await_page()                              # 齿轮点完这一页可能还没画完
+    before = {}
+    for _ in range(2):                          # 行也可能在首屏之下，off() 自己会翻页找
+        before.update({title: on for title, on, _ in p.switches()})
+        if not p.scroll_more():
+            break
+    p.top(2)
+    require_switches(before, ["每次联网时通知"], "主题·设置", contains=True)
     p.off(only=["每次联网时通知"], keep=["自动更新"], page="主题·设置")
     if maybe("隐私设置"):
         p.off(only=["个性化推荐"], page="主题·隐私")

@@ -10,14 +10,14 @@
 # 这台机的底栏标签在第 5 个位置（y≈94% 屏高），用 p.tab() 点；p.tap() 会先命中内容区同名文字。
 # 本仓库没有这台机器，未在真机上复跑。
 #
-# BUILD 写到 `.031` 为止、不带 `.A3`：带上的话这份脚本比同底包的 24129PN74C 更「具体」，
-# run.same_version_family_recipe() 会把所有没有专属脚本的同底包小米机（如 Xiaomi 13）改借这一份，
-# 而它们的底栏是「菜单」、天气也没有「更多设置」入口，会被这里的必需入口卡住。选脚本只按型号，不受此影响。
+# BUILD 置空：只录到 Android 16 的底包，没记到 ROM 版本号。底包跨机型共享、不能进 BUILD（#942）；
+# 没标录制版本的脚本不参与同版本挑选，选脚本只按型号，不受此影响。
 #
 # 用法：python3 tool/run.py -s 序列号 recipe [段名…]   不带段名=全跑
-BUILD = "BP2A.250605.031"
+BUILD = ""
 MODELS = ["2505APX7BC"]
 import time
+from entries import THEME_DEAD_ENDS
 from wait import until
 
 
@@ -152,21 +152,30 @@ def _():
 
 @step("主题")
 def _():
-    if "package:" in p.d.shell("pm path com.miui.themestore").output:
-        p.start("com.miui.themestore", foreground="com.android.thememanager")
-    else:
-        # 没有主题商店时直接起 thememanager：它没有 LAUNCHER activity，monkey 拉不起来（#730）
-        if "package:" not in p.d.shell("pm path com.android.thememanager").output:
-            print("  · 本机没有主题商店，跳过"); return
-        p.start("com.android.thememanager", ".ThemeResourceProxyTabActivity")
+    # 直达主题管理包的代理页（沿用 #730 的做法：它没有 LAUNCHER，monkey 拉不起来）；经主题商店冷启动
+    # 还要过一道重定向过渡窗，前台校验容易误判（#906）。落点被系统转走时仍按跳过收尾。
+    if "package:" not in p.d.shell("pm path com.android.thememanager").output:
+        print("  · 本机没有主题管理包，跳过"); return
+    start_or_skip("com.android.thememanager", ".ThemeResourceProxyTabActivity",
+                  dead_ends=THEME_DEAD_ENDS, reason="主题页打不开")
     time.sleep(2)
-    require(p.tab("我的"), "主题底部「我的」标签没找到")
+    if not p.tab("我的"):
+        raise RuntimeError("主题底部「我的」标签没找到；" + p.page_evidence())
     time.sleep(1)
     # 「设置」在这台是「我的」页上的文字按钮（精确匹配不会命中「设置壁纸」），图标形态也认
-    require(p.tap("设置", exact=True, scrolls=0), "主题「我的」页没有「设置」")
-    # 落点判据用页面上的项：ThemePreferenceActivity 类名不含 Setting，in_settings_page() 对它恒假
-    require(p.expect_page("每次联网时通知", timeout=3) or p.expect_page("自动更新", timeout=1),
-            f"主题设置页没有打开；停在 {p.focus()}")
+    if not p.tap("设置", exact=True, scrolls=0):
+        raise RuntimeError("主题「我的」页没有「设置」；" + p.page_evidence())
+    # 落点判据用页面上的项：比只看 Activity 名更严，这一页没画出这些项就不算进去
+    if not (p.expect_page("每次联网时通知", timeout=3) or p.expect_page("自动更新", timeout=1)):
+        raise RuntimeError("主题设置页没有打开；" + p.page_evidence())
+    p.await_page()                              # 齿轮点完这一页可能还没画完
+    before = {}
+    for _ in range(2):                          # 行也可能在首屏之下，off() 自己会翻页找
+        before.update({title: on for title, on, _ in p.switches()})
+        if not p.scroll_more():
+            break
+    p.top(2)
+    require_switches(before, ["每次联网时通知"], "主题·设置", contains=True)
     p.off(only=["每次联网时通知"], keep=["自动更新"], page="主题·设置")
     if maybe("隐私设置"):
         p.off(only=["个性化推荐"], page="主题·隐私")

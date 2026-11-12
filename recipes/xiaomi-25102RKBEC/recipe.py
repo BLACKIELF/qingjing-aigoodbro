@@ -14,33 +14,7 @@
 BUILD = "OS4.0"
 MODELS = ["25102RKBEC"]
 import time
-
-
-def gear(toolbar_only=False):
-    """很多小米 App 的设置是右上角齿轮图标，没有文字。
-    匹配只认正好是「设置」的描述、正文或 setting 类 id：商店「我的」页有一行正文「去功能设置里
-    重新开启」，主题商店有「设置壁纸」，按包含匹配会先命中它们、点进别的子页，整段跑空（#305 / #374）。"""
-    from fast import bounds, icon_hit
-
-    for n in p.tree().iter("node"):
-        l, t, r, b = bounds(n)
-        icon = "ImageView" in n.get("class", "") and r-l < p.W * 0.25 and b-t < p.H * 0.15
-        if icon_hit(n) and (n.get("clickable") == "true" or icon) and p.on_screen(n) and (not toolbar_only or b < p.H * 0.23):
-            p.click((l + r) // 2, (t + b) // 2); time.sleep(1)
-            return True
-    if not toolbar_only and p.find("设置", exact=True, edge_ok="tab"):
-        return p.tap("设置", exact=True, scrolls=0)
-    # 下载管理、天气和日历的齿轮藏在右上「更多」菜单里。
-    for n in p.tree().iter("node"):
-        key = (n.get("content-desc") or "") + " " + (n.get("resource-id") or "")
-        from fast import bounds
-        l, t, r, b = bounds(n)
-        if any(k in key.lower() for k in ("更多", "more", "menu")) and n.get("clickable") == "true" and p.on_screen(n) and b < p.H * 0.22:
-            p.click((l + r) // 2, (t + b) // 2); time.sleep(0.5)
-            if p.tap("设置", exact=True, scrolls=0):
-                return True
-            break
-    return False
+from entries import THEME_DEAD_ENDS
 
 
 def browser_settings():
@@ -58,11 +32,6 @@ def browser_settings():
             p.settle(before, 1.5)
             return gear()
     return False
-
-
-def tap_any(*names, scrolls=6):
-    """依次试几个入口名，点中一个就返回 True。"""
-    return any(maybe(n, scrolls) for n in names)
 
 
 def tab(name):
@@ -146,17 +115,26 @@ def _():
 
 @step("主题")
 def _():
-    # 这台：themestore 打开后落到 thememanager 的 ThemeResourceProxyTabActivity。
+    # 这台：直接起 thememanager 的 ThemeResourceProxyTabActivity（沿用 #730 的做法）。
     # 若系统广告组件未挂起，开屏窗会抢焦点导致本段被跳过（见文件头说明）。
-    if "package:" in p.d.shell("pm path com.miui.themestore").output:
-        p.start("com.miui.themestore", foreground="com.android.thememanager")
-    else:
-        # 没有主题商店时直接起 thememanager：它没有 LAUNCHER activity，monkey 拉不起来（#730）
-        if "package:" not in p.d.shell("pm path com.android.thememanager").output:
-            print("  · 本机没有主题商店，跳过"); return
-        p.start("com.android.thememanager", ".ThemeResourceProxyTabActivity")
-    p.go("我的", "设置")
-    gear()
+    if "package:" not in p.d.shell("pm path com.android.thememanager").output:
+        print("  · 本机没有主题管理包，跳过"); return
+    start_or_skip("com.android.thememanager", ".ThemeResourceProxyTabActivity",
+                  dead_ends=THEME_DEAD_ENDS, reason="主题页打不开")
+    # 导航失败以前与「本页没有目标开关」同形：进「我的」、进设置页、点名开关三步都校验，
+    # 0 个开关按失败报并带页面现场（#906）。
+    if not p.go("我的", "设置"):
+        raise RuntimeError("未进入主题「我的」；" + p.page_evidence())
+    if not gear():
+        raise RuntimeError("主题设置入口没找到；" + p.page_evidence())
+    p.await_page()                              # 齿轮点完这一页可能还没画完
+    before = {}
+    for _ in range(2):                          # 行也可能在首屏之下，off() 自己会翻页找
+        before.update({title: on for title, on, _ in p.switches()})
+        if not p.scroll_more():
+            break
+    p.top(2)
+    require_switches(before, ["每次联网时通知"], "主题·设置", contains=True)
     p.off(only=["每次联网时通知"], keep=["自动更新"], page="主题·设置")
     if maybe("隐私设置"):
         p.off(only=["个性化推荐"], page="主题·隐私"); p.back()

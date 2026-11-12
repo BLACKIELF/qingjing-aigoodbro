@@ -2,6 +2,7 @@
 """肉呆去广告 · 总入口。所有命令都要带 -s <序列号>（adb devices 第一列）。
 
   python3 tool/run.py devices                      列出连着的手机、型号、系统版本、有没有现成机型脚本
+  python3 tool/run.py captures [目录]               只读：报失败现场（captures/）占了多少地方，由人手动清
   python3 tool/run.py -s 序列号 check              只读：锁屏、机型脚本匹配、广告包挂起状态
   python3 tool/run.py -s 序列号 ui-check           只读：检查手机读屏服务，不点击任何开关
   python3 tool/run.py -s 序列号 backup             改动前快照，存到 backups/<型号>-<时间>/
@@ -25,21 +26,24 @@
 """
 import glob, json, os, re, subprocess, sys, time
 from pathlib import Path
-for _st in (sys.stdout, sys.stderr):
-    try:
-        _st.reconfigure(encoding="utf-8", errors="replace")   # Windows 控制台默认不是 UTF-8
-    except Exception:
-        pass
+from stdio import use_utf8_console
+
+use_utf8_console()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adb_link
 import troubleshooting
 import wait
 from backups import Backups, root_from_env
+from captures import Captures, human_size
+from captures import root_from_env as capture_root
 from entries import FAMILY          # 品牌族只此一份；广告包、参考脚本与版本比较都按它归
 from host import ON_PHONE           # 手机版不写插电常亮（#731）
+from recipe_meta import recipe_meta
+import verify_ledger
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(ROOT, "tool")
+RECIPES = os.path.join(ROOT, "recipes")
 BACKUPS = root_from_env() or os.path.join(ROOT, "backups")
 
 # 各品牌常见的系统广告包（快应用另列在 QUICKAPP）。只在机主同意后挂起；挂起可一条命令还原。
@@ -51,6 +55,12 @@ AD_PKGS = {
     "xiaomi": ["com.miui.systemAdSolution", "com.miui.msa.global"],
     "vivo": [],
 }
+
+# 选择页上默认勾上「挂起」的包（#973）。小米族的 msa 就是去广告目标本身，未挂起时
+# 默认勾上，省掉「首轮主题段被开屏窗抢前台 → 再跑一轮」；其他品牌的这一项要改锁屏 /
+# 服务，维持不勾。显式列包名而不是取 AD_PKGS 整族：给小米族加新包时先想清楚它该不该
+# 跟着默认勾上（tests/test_plan.py 的 DefaultOnTableTests 守着）。
+DEFAULT_ON = frozenset({"com.miui.systemAdSolution", "com.miui.msa.global"})
 
 # 快应用组件：免安装的「轻 App」，广告常用 hap:// 链接把人跳进去。
 # (包名, 名称, 品牌, 是否实测过挂起)
@@ -126,29 +136,100 @@ MSA = "com.miui.systemAdSolution"
 MSA_PKGS = (MSA, "com.miui.msa.global")      # 国行 / 海外版的 msa，挂起后都要断网
 
 
-def msa_net(serial, enable, pkg=MSA):
-    """仅用本系统确实提供的接口；Android 13 等旧系统不伪报断网成功。"""
+CHAIN3_STATES = {"chain:enabled": "enabled", "true": "enabled",
+                 "chain:disabled": "disabled", "false": "disabled"}
+CHAIN3_GLOB = "chain3-setting*.json"
+DEVICE_SERIAL_KEYS = ("ro.serialno", "ro.boot.serialno")
+
+
+def msa_command(help_text, command):
+    return re.search(r"(?m)^\s*" + re.escape(command) + r"(?:\s|$)", help_text) is not None
+
+
+def device_key(serial):
+    """记录用的设备标识。无线调试的 adb serial 是「IP:端口」，重连就变，还原时对不上上一轮。"""
+    return first_nonempty(prop(serial, key) for key in DEVICE_SERIAL_KEYS) or serial
+
+
+def chain3_state(serial):
+    """设备级开关 chain3 的当前值；读不到返回空串（旧系统没有该接口）。"""
+    return CHAIN3_STATES.get(sh_all(serial, "cmd connectivity get-chain3-enabled").strip().lower(), "")
+
+
+def chain3_record(key):
+    """跨多次 backup 找回本设备没还原的原值。快照目录只按型号分，同型号另一台要按设备标识过滤。
+    坏文件跳过：任何一份历史记录损坏都不该把挂起与还原一起带崩。"""
+    for path in sorted(glob.glob(os.path.join(BACKUPS, "*", CHAIN3_GLOB)), reverse=True):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if data.get("serial") == key and data.get("original") in ("enabled", "disabled"):
+            return path, data
+    return None, None
+
+
+def chain3_remember(key, backup, original):
+    """先落盘再改 chain3；重复挂起不覆盖最初原值，否则还原会写回「挂起后」的值。"""
+    path, _ = chain3_record(key)
+    if path is not None:
+        return path
+    path = os.path.join(backup, "chain3-setting.json")
+    if os.path.exists(path):            # 同型号另一台设备占着这个名字，别覆盖它的还原记录
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", key)
+        path = os.path.join(backup, f"chain3-setting-{safe}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"serial": key, "original": original}, f)
+    return path
+
+
+def msa_net(serial, enable, pkg=MSA, chain3=None):
+    """仅用本系统确实提供的接口；Android 13 等旧系统不伪报断网成功。
+
+    chain3 不按包生效（挂起时强制打开），还原要按挂起前的原值写回，不能一律写 false（#945）。
+    chain3=None 表示由本函数读当前值；调用方先读过就传进来，好让落盘早于这次改动。
+    """
     help_text = sh_all(serial, "cmd connectivity help")
     required = ["set-package-networking-enabled", "get-package-networking-enabled"]
     if not enable:
         required += ["set-chain3-enabled", "get-chain3-enabled"]
-    if not all(re.search(r"(?m)^\s*" + re.escape(command) + r"(?:\s|$)", help_text) for command in required):
-        return {"ok": False, "supported": False, "reason": "本系统不支持 msa 断网接口；仅挂起仍可能出现广告"}
+    if not all(msa_command(help_text, command) for command in required):
+        return {"ok": False, "supported": False, "chain3": "",
+                "reason": "本系统不支持 msa 断网接口；仅挂起仍可能出现广告"}
+    if chain3 is not None:
+        original = chain3
+    else:
+        original = "" if enable else chain3_state(serial)
+    if not enable and not original:
+        # 读不到原值就不动设备级开关：改了就没有依据还原（#945）
+        return {"ok": False, "supported": True, "chain3": "",
+                "reason": "读不到 chain3 原值，未更改网络设置"}
+    if enable and original and not msa_command(help_text, "set-chain3-enabled"):
+        original = ""                    # 降级后的系统没有这个接口，按包联网照常还原
     commands = [f"cmd connectivity set-package-networking-enabled {'true' if enable else 'false'} {pkg}"]
     if not enable:
         commands.append("cmd connectivity set-chain3-enabled true")
+    elif original:
+        commands.append("cmd connectivity set-chain3-enabled " + ("true" if original == "enabled" else "false"))
     for command in commands:
         result = sh_all(serial, command)
         if re.search(r"unknown command|exception|permission denial|error|not supported|denied", result, re.I):
-            return {"ok": False, "supported": True, "reason": "系统拒绝更改 msa 网络状态：" + result[-180:]}
+            return {"ok": False, "supported": True, "chain3": original,
+                    "reason": "系统拒绝更改 msa 网络状态：" + result[-180:]}
     result = sh_all(serial, f"cmd connectivity get-package-networking-enabled {pkg}").strip().lower()
     # HyperOS 实机返回「包名:allow/deny」，部分接口返回布尔值；不接受错误信息中的碰巧匹配。
     expected = {"true", f"{pkg}:allow".lower()} if enable else {"false", f"{pkg}:deny".lower()}
-    ok = result in expected
-    if ok and not enable:
-        chain = sh_all(serial, "cmd connectivity get-chain3-enabled").strip().lower()
-        ok = chain in {"chain:enabled", "true"}
-    return {"ok": ok, "supported": True, "reason": "" if ok else "msa 网络状态回读未确认成功"}
+    if result not in expected:
+        return {"ok": False, "supported": True, "chain3": original,
+                "reason": "msa 网络状态回读未确认成功"}
+    if not enable and chain3_state(serial) != "enabled":
+        return {"ok": False, "supported": True, "chain3": original,
+                "reason": "chain3 状态回读未确认成功"}
+    if enable and original and chain3_state(serial) != original:
+        return {"ok": False, "supported": True, "chain3": original,
+                "reason": f"chain3 未回到原值 {original}"}
+    return {"ok": True, "supported": True, "chain3": original, "reason": ""}
 
 
 # 部分 ROM 上 ro.build.version.release 单键读为空，真值在分区属性里（#195：HyperOS 4 /
@@ -211,19 +292,17 @@ VERSION_MARKER = {"oppo": "_", "vivo": "_A_", "honor": " ", "meizu": "Flyme"}
 # CP2A.260605.016），没有 _A_ 可切，整条就是版本核心。按形状认，不写死某一代的首字母。
 AOSP_BUILD_ID = re.compile(r"^[A-Z]{1,3}\d[A-Z0-9]{0,2}\.\d{6}\.\d{3}")
 
-
-def recipe_meta(path):
-    with open(path, encoding="utf-8") as f:
-        src = f.read()
-    m = re.search(r'^BUILD\s*=\s*"([^"]*)"', src, re.M)
-    models = re.search(r'^MODELS\s*=\s*\[([^\]]*)\]', src, re.M)
-    return {"build": m.group(1) if m else "", "steps": re.findall(r'^@step\("([^"]+)"\)', src, re.M),
-            "models": re.findall(r'"([^"]+)"', models.group(1)) if models else []}
+# 小米的 ro.build.display.id 可能是 Android 底包（BP2A.250605.031、SKQ1.210908.001）：同一代
+# 机型共用一个号，对「两台机是不是同一个 ROM 版本」零信息量，抽出的核心必须为空、不参与比对
+# （#942）。与上面 vivo 的方向相反——那个 AOSP 号是逐版本的，这边是跨机型共享的。
+XIAOMI_BASE_BUILD = re.compile(r"^[A-Z]{1,3}\d[A-Z0-9]{0,2}\.\d{6}\.\d{3}")
 
 
 def version_core(value, fam):
     """抽出可比的版本号：切掉机型名、去掉括号。抽不出来返回空串，空值不参与比对。"""
     v = (value or "").strip()
+    if fam == "xiaomi" and XIAOMI_BASE_BUILD.match(v):
+        return ""
     marker = VERSION_MARKER.get(fam)
     if marker:
         if marker in v:
@@ -257,11 +336,17 @@ def _dir_family(path):
 
 
 def same_version_family_recipe(allr, fam, preferred, device_info):
-    """同族里挑一份录制版本相同的专用脚本，且不比固定参考窄；挑不到返回 None。
+    """同族里挑一份比固定参考更贴这台、且不比它窄的专用脚本；挑不到返回 None。
 
-    段数门槛是硬条件：版本对得上但更窄的脚本会让一次运行少关一类广告（#319）。
+    固定参考与候选同池比版本核心的具体程度：候选要严格更长才换。等长意味着两者对这台机
+    同样贴，保固定参考——否则目录名字母序就成了决定因素（#969）。固定参考对不上这台时它
+    不设门槛，任何对得上的同版本候选都比它贴（#319）。段数门槛是硬条件：版本对得上但更窄
+    的脚本会让一次运行少关一类广告（#319）。
     """
-    ref_steps = len(recipe_meta(preferred)["steps"])
+    ref_meta = recipe_meta(preferred)
+    ref_core = version_core(ref_meta["build"], fam)
+    ref_matches = bool(matching_device_version(device_info, ref_core, fam))
+    ref_steps = len(ref_meta["steps"])
     ranked = []
     for r in allr:
         if _dir_family(r) != fam:
@@ -270,11 +355,13 @@ def same_version_family_recipe(allr, fam, preferred, device_info):
         core = version_core(meta["build"], fam)
         if not matching_device_version(device_info, core, fam):
             continue
+        if ref_matches and len(core) <= len(ref_core):
+            continue
         if len(meta["steps"]) < ref_steps:
             continue
-        # 录制得越具体越贴这台；同长度按目录名，不随遍历顺序变。
-        ranked.append((-len(core), os.path.basename(os.path.dirname(r)), r))
-    return sorted(ranked)[0][2] if ranked else None
+        # 录制得越具体越贴这台；同长度按段数、再按目录名，不随遍历顺序变。
+        ranked.append((-len(core), -len(meta["steps"]), os.path.basename(os.path.dirname(r)), r))
+    return sorted(ranked)[0][3] if ranked else None
 
 
 def recipe_for(model, brand="", device_info=None):
@@ -291,11 +378,12 @@ def recipe_for(model, brand="", device_info=None):
                     if recorded and build_ok(device_info, recorded):
                         return variant, False
             return r, False
-    fam = FAMILY.get((brand or "").lower())
+    fam = FAMILY.get((brand or "").lower(), "")
     preferred = os.path.join(ROOT, "recipes", REFERENCE.get(fam, ""), "recipe.py")
     if fam in REFERENCE and os.path.exists(preferred):
-        # 固定参考是按别的版本录的就先在同族里找一份同版本的；同版本的那份更可能对得上入口（#319）。
-        if device_info and not version_match(device_info, recipe_meta(preferred)["build"], fam):
+        # 固定参考的 BUILD 常写得粗（OS4.0、16），前缀一命中就到它为止，同族里录在同版本上的
+        # 脚本永远进不了候选。两条路径同池排（#969）；固定参考的 BUILD 写粗只是让它自己不够贴。
+        if device_info:
             picked = same_version_family_recipe(allr, fam, preferred, device_info)
             if picked:
                 return picked, True
@@ -522,6 +610,21 @@ def cmd_devices(rest):
     return 0
 
 
+def cmd_captures(rest):
+    """只读：报失败现场占了多少地方，由人手动清（失败现场不自动清理）。"""
+    root = rest[0] if rest else capture_root()
+    if not root:
+        return fail("没有捕获目录。图形客户端跑任务时会自动给；直接指定就写 captures <目录>"
+                    "（客户端的数据目录下有个 captures/）")
+    count, total = Captures(root).usage()
+    if not count:
+        print(f"没有失败现场：{root}")
+        return 0
+    print(f"{count} 份失败现场，共 {human_size(total)}：{root}\n"
+          "确认不再需要后可以整个删掉，程序不会自己清。")
+    return 0
+
+
 def cmd_ui_check(serial, rest):
     return py("fast.py", "-s", serial, "check")
 
@@ -534,7 +637,8 @@ def cmd_check(serial, rest):
         print(troubleshooting.CLICK + "：被系统拒绝。" + troubleshooting.XIAOMI_INPUT)
     if r and ref:
         rb = recipe_meta(r)["build"]
-        matched = version_match(i, rb, FAMILY.get((i["brand"] or "").lower()))
+        fam = FAMILY.get((i["brand"] or "").lower(), "")
+        matched = version_match(i, rb, fam)
         this = matched or i["build"] or i["os"]
         if not rb:
             ver = "录制版本 未标"
@@ -544,12 +648,18 @@ def cmd_check(serial, rest):
             # 「相同」只陈述版本对得上，不说这份脚本适配套过了（CONTEXT.md 的「参考脚本」）。
             same = "相同" if matched else "不同"
             ver = f"录制版本 {rb}，这台 {this}（{same}）"
-        print(f"机型脚本：本型号没有；同品牌参考 {os.path.relpath(r, ROOT)}，{ver}。"
+        # 换到同族更贴的那份时要说清楚：报告者据此判断要不要手动补入口再报障（#969）。
+        # 没有固定参考的品牌（三星、华为）走的是「取同品牌第一份」，没比过版本，不能这么说。
+        pinned = REFERENCE.get(fam)
+        note = "（同族同版本，非固定参考）" if pinned and os.path.basename(os.path.dirname(r)) != pinned else ""
+        print(f"机型脚本：本型号没有；同品牌参考 {os.path.relpath(r, ROOT)}{note}，{ver}。"
               f"要用：recipe --ref（安全模式：只关脚本里点名的开关，找不到就跳过）")
     elif r:
         rb = recipe_meta(r)["build"]
-        ok = build_ok(i, rb)
-        print(f"机型脚本：{os.path.relpath(r, ROOT)}；录制版本 {rb or '未标'}，{'版本一致' if ok else '版本不同：用安全模式跑，部分步骤可能找不到入口'}")
+        # 没标录制版本就无从比对，不能说成「一致」：置空是「只录到底包」这类脚本的常态（#942）。
+        ver = f"录制版本 {rb}，{'版本一致' if build_ok(i, rb) else '版本不同：用安全模式跑，部分步骤可能找不到入口'}" if rb \
+            else "录制版本 未标，不比对版本"
+        print(f"机型脚本：{os.path.relpath(r, ROOT)}；{ver}")
     else:
         print("机型脚本：没有。可跑：通知渠道 chan-scan/chan-off、广告包挂起；其余照 docs/清单 手动做，或用 tool/explore.py 探路")
     for p in ad_packages(i["brand"]):
@@ -663,7 +773,10 @@ def cmd_suspend(serial, rest):
             extra = ""
             if p in MSA_PKGS:
                 sh(serial, f"am force-stop {p}")
-                network = msa_net(serial, False, p)
+                original = chain3_state(serial)
+                if original:
+                    chain3_remember(device_key(serial), d, original)     # 落盘早于打开 chain3
+                network = msa_net(serial, False, p, chain3=original)
                 if network["ok"]:
                     extra = "，已禁止联网"
                 elif not network["supported"]:
@@ -684,18 +797,22 @@ def cmd_unsuspend(serial, rest):
     if not pk:
         f = os.path.join(latest_backup(serial), "suspended.txt")
         pk = sorted(set(open(f, encoding="utf-8").read().split())) if os.path.exists(f) else []
+    key = device_key(serial)
     failures = 0
     for p in pk:
         sh(serial, f"pm unsuspend --user 0 {p}")
+        still = suspended(serial, p)
         extra = ""
         if p in MSA_PKGS:
-            network = msa_net(serial, True, p)
+            path, data = chain3_record(key)
+            network = msa_net(serial, True, p, chain3=data["original"] if data else "")
             if network["supported"] and not network["ok"]:
                 failures += 1
                 extra = "；联网还原失败：" + network["reason"]
             elif not network["supported"]:
                 extra = "；本机无 msa 断网接口，未更改联网设置"
-        still = suspended(serial, p)
+            elif path and not still:
+                os.remove(path)          # 包还挂着或联网没还原成，记录留着下次重试
         failures += still
         print(p, ("解除挂起失败" if still else "已恢复挂起状态") + extra)
     return 1 if failures else 0
@@ -830,11 +947,25 @@ def cmd_status_json(serial, rest):
         meta = recipe_meta(r)
         steps, rb = meta["steps"], meta["build"]
         ok = (not ref) and build_ok(i, rb)
-    ads = [{"pkg": p, "suspended": suspended(serial, p)} for p in ad_packages(i["brand"]) if installed(serial, p)]
+    # 预勾与否在这里一次算好（已挂起的不预勾），两个客户端只消费，不再自己读 suspended（#973）。
+    ads = []
+    for p in ad_packages(i["brand"]):
+        if not installed(serial, p):
+            continue
+        sus = suspended(serial, p)
+        ads.append({"pkg": p, "suspended": sus, "default_on": (not sus) and p in DEFAULT_ON})
     backup = Backups(BACKUPS).latest(i["model"])
+    # 台账按脚本目录记验证对象：借同族参考或 MODELS 别名复用时，不能把原机型的验证
+    # 当成本机验证。保留原始台账，状态只对目录对应型号透传；台账缺失仍视为打包错误。
+    ledger = verify_ledger.load(os.path.join(RECIPES, "verified.toml")) if r else {}
+    own_record = bool(r and not ref and i["model"] and
+                      os.path.basename(os.path.dirname(r)).endswith("-" + i["model"]))
+    coverage, evidence, verified = verify_ledger.entry(
+        ledger, os.path.relpath(r, RECIPES).replace(os.sep, "/") if own_record else "")
     print(json.dumps({
         "info": i, "locked": locked(serial),
         "recipe": os.path.relpath(r, ROOT) if r else None, "recipe_ref": ref, "recipe_build": rb, "recipe_ok": ok, "steps": steps,
+        "recipe_coverage": coverage, "recipe_evidence": evidence, "recipe_verified": verified,
         "ads": ads, "quickapps": quickapps(serial),
         "stay_on": sh(serial, "settings get global stay_on_while_plugged_in"),
         "dev": sh(serial, "settings get global development_settings_enabled") == "1",
@@ -881,6 +1012,8 @@ def dispatch(a):
         print(__doc__); return 0
     if a[0] == "devices":
         return cmd_devices(a[1:])
+    if a[0] == "captures":
+        return cmd_captures(a[1:])
     if a[0] == "adapt":
         return py("adapt.py", *a[1:])
     # 以前 adb 在 import 期就解析，找不到时**任何**调用（含参数写错）都先报这一句；保留同样的先后。

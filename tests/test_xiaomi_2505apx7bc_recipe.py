@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tool"))
 sys.path.insert(0, str(ROOT / "tests"))
+import fast
 import run
 from fixtures import load_recipe, phone_mock
 
@@ -36,6 +37,9 @@ class MixFlip2RecipeTests(unittest.TestCase):
         p.entry.return_value = False
         p.scroll_more.return_value = False
         p.switches.return_value = []
+        # 主题段导航失败时要把页面现场拼进报错（#906）：用真实实现，别让 Mock 替掉它
+        p._page_diagnosis = lambda: fast.Screen._page_diagnosis(p.screen)
+        p.page_evidence = lambda titles=(): fast.Screen.page_evidence(p.screen, list(titles))
         return p
 
     def test_actual_model_selects_own_recipe_and_pins_recorded_build(self):
@@ -44,23 +48,22 @@ class MixFlip2RecipeTests(unittest.TestCase):
         self.assertEqual(Path(path).parent.name, "xiaomi-2505APX7BC")
         meta = run.recipe_meta(path)
         self.assertEqual(meta["models"], ["2505APX7BC"])
-        self.assertEqual(meta["build"], "BP2A.250605.031")
+        self.assertEqual(meta["build"], "")
         self.assertEqual(meta["steps"], STEPS)
 
-    def test_build_accepts_this_phone_and_rejects_a_neighbouring_build(self):
+    def test_an_unlabelled_build_never_warns_about_the_version(self):
+        """旧树也绿，守的是不回退：BUILD 置空＝未标录制版本，check 不据此告警（#942）。"""
         phone = {"build": "BP2A.250605.031.A3", "os": "OS3.0.309.0.WOCCNXM"}
-        self.assertTrue(run.build_ok(phone, "BP2A.250605.031"))
-        self.assertFalse(run.build_ok({"build": "BP2B.250605.031.A3", "os": ""},
-                                      "BP2A.250605.031"))
+        self.assertTrue(run.build_ok(phone, ""))
 
-    def test_other_phones_on_the_same_baseband_still_borrow_the_reference_recipe(self):
-        # BUILD 写到 `.031` 为止，是为了不让同底包、没有专属脚本的机型改借这一份：
-        # 它们底栏是「菜单」、天气也没有「更多设置」，会被这里的必需入口卡住
+    def test_other_phones_on_the_same_baseband_never_borrow_this_recipe(self):
+        # 只录到底包、没记到 ROM 版本号，所以 BUILD 置空、不参与「录制版本相同」的挑选（#942）：
+        # 同底包机型改借哪一份都不会落到这里——它们底栏是「菜单」、天气也没有「更多设置」。
         xiaomi13 = {"model": "2211133C", "brand": "Xiaomi", "build": "BP2A.250605.031.A3",
                     "os": "OS3.0.309.0.WOCCNXM"}
         path, reference = run.recipe_for("2211133C", "Xiaomi", xiaomi13)
         self.assertTrue(reference)
-        self.assertEqual(Path(path).parent.name, "xiaomi-24129PN74C")
+        self.assertNotEqual(Path(path).parent.name, "xiaomi-2505APX7BC")
 
     def test_bottom_tabs_go_through_tab_not_go_or_tap(self):
         # 这台的第 5 个底栏标签在 y≈94% 屏高；p.tap() 会先命中内容区同名文字（#305 / #386）
@@ -109,6 +112,7 @@ class MixFlip2RecipeTests(unittest.TestCase):
         p.tab.return_value = True
         p.tap.return_value = True
         p.expect_page.return_value = True
+        p.switches.return_value = [("每次联网时通知", True, (900, 500))]
         load_recipe(p, self.path, ["主题"])
         self.assertEqual(p.tab.call_args_list[0].args, ("我的",))
         # 「设置」在这台是文字按钮：精确匹配那一下要真的点出去
@@ -116,7 +120,7 @@ class MixFlip2RecipeTests(unittest.TestCase):
         self.assertEqual(p.off.call_args_list[0].kwargs["page"], "主题·设置")
 
     def test_theme_settings_page_that_does_not_open_fails_the_step(self):
-        # ThemePreferenceActivity 的类名不含 Setting，落点只能看页面上的项：判据不过必须报失败
+        # 落点判据看页面上的项：页面没画出这些项就报失败
         p = self.phone("com.android.thememanager/.ThemePreferenceActivity")
         p.d.shell.return_value.output = "package:/data/app/themestore/base.apk"
         p.tab.return_value = True

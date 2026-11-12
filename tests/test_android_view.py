@@ -4,12 +4,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "android" / "app" / "src" / "main" / "python"))
+sys.path.insert(0, str(ROOT / "tool"))
 
 from aac_android import view  # noqa: E402
+import verify_ledger  # noqa: E402
 
 
 class FakeApi:
@@ -39,28 +41,16 @@ def status(**over):
 
 
 class SummarizeTest(unittest.TestCase):
-    def test_shared_cases_with_web_client(self):
-        """tests/summary_cases.json 是两处 summarize() 的共同口径：网页版用例断言同一批串。"""
-        cases = json.loads((ROOT / "tests" / "summary_cases.json").read_text(encoding="utf-8"))
-        for case in cases:
-            with self.subTest(case=case["name"]):
-                self.assertEqual(view.summarize({"tail": case["tail"]}), case["want"])
+    """手机版结果页那一句由 tool/summary.py 给（#1189）：view 只把它贴到每一行，不再自己算。
 
-    def test_known_lines(self):
-        cases = [(["机型脚本跑完：关了 12 个，34 秒"], "关了 12 个开关"),
-                 (["拨了 5 个", "仍开着: 1 个"], "关了 5 个渠道，复查仍开着 1 个"),
-                 (["拨了 5 个"], "关了 5 个渠道"),
-                 (["快照已存"], "已保存")]
-        for tail, want in cases:
-            self.assertEqual(view.summarize({"tail": tail}), want)
+    口径本身（共享样例集、扣减、机器行）在 `tests/test_summary.py` 跑，这里只验链路。旧树也绿：
+    旧的本地实现在同一段 tail 上给出同一句，这条守的是「别把共享实现换回本地一份」。
+    """
 
-    def test_quickapp_counts_lines(self):
-        tail = ["  快应用 com.a 已关闭", "  快应用 com.b 已关闭", "快应用组件已关闭（保留项除外）。请按常用入口核对效果；恢复：quickapp on"]
-        self.assertEqual(view.summarize({"tail": tail}), "2 个组件已关闭")
-
-    def test_falls_back_to_last_line(self):
-        self.assertEqual(view.summarize({"tail": ["甲", "乙", ""]}), "乙")
-        self.assertEqual(view.summarize({"tail": []}), "")
+    def test_poll_rows_carry_the_shared_summary(self):
+        run = view.poll(FakeApi(run={"results": [{"rc": 0, "tail": ["拨了 5 个", "仍开着: 1 个"]}],
+                                   "cancel": False}))
+        self.assertEqual(run["results"][0]["summary"], "关了 5 个渠道，复查仍开着 1 个")
 
 
 class OutcomeTest(unittest.TestCase):
@@ -87,6 +77,59 @@ class OutcomeTest(unittest.TestCase):
         self.assertEqual(run["retry"], 1)
         # 没有这个字段的载荷不炸：Compose 侧 optInt 取到 0，结果页不出按钮
         self.assertIsNone(view.poll(FakeApi(run={"results": [], "cancel": True})).get("retry"))
+
+
+class RecipeCoverageTest(unittest.TestCase):
+    """机型脚本验到什么程度：只在负面的两档给结果页多一行（沿用 #1124 的档位，#1130）。
+
+    档位是引擎从台账现读、随 `status-json` 到客户端；说不说、怎么说都在 Python 这边，
+    Compose 只把这一行画出来。"""
+
+    def snap(self, coverage="部分", **row):
+        """一次跑过机型脚本的结果页快照：默认这一行是成功的那一步。
+
+        成功行照引擎的原样不写 `skipped`（`step_result()` 只在跳过时才带它）：拿显式 False 去喂，
+        `not r.get("skipped")` 被改成 `is False` 也照样绿。档位照 job 快照原样放在 `recipe_coverage`。"""
+        done = {"title": "关闭各 App 里的广告开关", "kind": "recipe", "rc": 0, **row}
+        api = FakeApi(run={"results": [done], "cancel": False, "recipe_coverage": coverage})
+        return view.poll(api)
+
+    def test_partial_coverage_adds_a_line(self):
+        note = self.snap("部分")["coverage_note"]
+        self.assertIn("只在一部分步骤上做过真机验证", note)
+        self.assertNotIn("App", note, "手机版措辞不说「去 App 里核对」——用户本来就在 App 里")
+        for word in ("tier", "evidence", "部分验证"):
+            self.assertNotIn(word, note, "文案不能露出内部取值名")
+
+    def test_full_coverage_adds_nothing(self):
+        self.assertEqual(self.snap("全部")["coverage_note"], "")
+
+    def test_a_script_with_no_ledger_entry_says_so(self):
+        self.assertIn("没有真机验证记录", self.snap("未记录")["coverage_note"])
+
+    def test_an_unknown_or_missing_tier_says_nothing(self):
+        for value in ("", "以后的第四档", None):
+            with self.subTest(coverage=value):
+                self.assertEqual(self.snap(value)["coverage_note"], "")
+
+    def test_a_skipped_recipe_step_means_no_line(self):
+        # 没勾脚本 / 这台机没有专用脚本：那一行是「跳过」，拿别的步的结论说脚本的事会误导
+        self.assertEqual(self.snap("部分", skipped=True)["coverage_note"], "")
+
+    def test_a_run_that_never_touched_the_script_has_no_line(self):
+        run = {"results": [{"title": "关闭营销通知", "kind": "channels", "rc": 0}], "cancel": False,
+               "recipe_coverage": "未记录"}
+        self.assertEqual(view.poll(FakeApi(run=run))["coverage_note"], "")
+
+    def test_a_snapshot_without_the_tier_says_nothing(self):
+        # 旧载荷 / 没勾脚本时快照里就没有这个字段：结果页照常显示，不炸、也不猜深浅
+        run = {"results": [{"title": "关闭各 App 里的广告开关", "kind": "recipe", "rc": 0}], "cancel": False}
+        self.assertEqual(view.poll(FakeApi(run=run))["coverage_note"], "")
+
+    def test_every_tier_but_full_has_its_own_line(self):
+        """档位词表两处：`verify_ledger.TIERS` 是单一来源，这里只做映射。台账加一档时这条会红，
+        提醒「新档在手机结果页说不说」要想一遍，而不是静默不显示（#1130）。"""
+        self.assertEqual(set(view.COVERAGE_NOTES) | {"全部"}, set(verify_ledger.TIERS))
 
 
 class StallWatchTest(unittest.TestCase):
@@ -181,6 +224,24 @@ class DetectTest(unittest.TestCase):
         self.assertEqual(d["manual_name"], "OPPO / ColorOS")
         self.assertIn("OPPO-ColorOS.md", d["manual_url"])
 
+    def test_samsung_huawei_meizu_land_on_their_own_checklist(self):
+        """没有专用脚本时，这三家的按钮要落到自己那份清单并写上品牌名（#952）。"""
+        want = {"samsung": ("三星 / One UI", "三星-OneUI.md"),
+                "huawei": ("华为 / HarmonyOS", "华为-HarmonyOS.md"),
+                "meizu": ("魅族 / Flyme", "魅族-Flyme.md")}
+        for brand, (name, filename) in want.items():
+            with self.subTest(brand=brand):
+                d = self.detect(steps=[], recipe=None, info={"brand": brand})
+                self.assertEqual(d["manual_name"], name)
+                self.assertEqual(unquote(d["manual_url"]), f"{view.REPO}/blob/main/docs/清单/{filename}")
+
+    def test_every_checklist_entry_has_a_name_and_a_file(self):
+        """旧树也绿，守的是表里每一项都有名字、对应文件也真在仓库里，不回退。"""
+        for filename in view.CHECKLIST.values():
+            with self.subTest(filename=filename):
+                self.assertTrue(view.CHECKLIST_NAME.get(filename))
+                self.assertTrue((ROOT / "docs" / "清单" / filename).is_file())
+
     def test_reference_recipe_runs_in_safe_mode(self):
         d = self.detect(recipe="oppo/PX9", recipe_ref=True, recipe_ok=False)
         self.assertTrue(d["ref"])
@@ -201,7 +262,7 @@ class DetectTest(unittest.TestCase):
         self.assertIn("保留", d["quickapp_note"])
         self.assertIn("hap://", d["quickapp_note"])
         self.assertIn("vivo 优先使用快应用服务开关", d["quickapp_note"])
-        self.assertEqual(d["ads"], [{"pkg": "com.opos.ads", "name": "OPPO 广告服务"}])
+        self.assertEqual(d["ads"], [{"pkg": "com.opos.ads", "name": "OPPO 广告服务", "default_on": False}])
         d = self.detect(quickapps=[{"name": "A", "closed": True}], ads=[{"pkg": "x", "suspended": True}])
         self.assertEqual((d["quickapp_state"], d["ads_state"]), ("已关闭", "已挂起"))
         d = self.detect(quickapps=[{"name": "A", "closed": True}, {"name": "C", "keep": True}])
@@ -212,6 +273,13 @@ class DetectTest(unittest.TestCase):
     def test_xiaomi_ad_component_says_partial_success_is_reported(self):
         d = self.detect(ads=[{"pkg": "com.miui.systemAdSolution"}])
         self.assertIn("会报告部分完成", d["ads"][0]["name"])
+
+    def test_default_mark_reaches_the_phone_selection_page(self):
+        """#973：预勾与否由 status-json 的 default_on 给，手机版只透传，不在 Kotlin 里再判一次。"""
+        d = self.detect(ads=[{"pkg": "com.miui.systemAdSolution", "default_on": True},
+                             {"pkg": "com.opos.ads", "default_on": False}])
+        self.assertEqual([(a["pkg"], a["default_on"]) for a in d["ads"]],
+                         [("com.miui.systemAdSolution", True), ("com.opos.ads", False)])
 
 
 class BrandGuideTest(unittest.TestCase):
@@ -346,6 +414,50 @@ class BrandTapsShapeTest(unittest.TestCase):
         rows = json.loads((ROOT / "docs" / "手机版教程" / "brand-taps.json").read_text(encoding="utf-8"))["rows"]
         for word in set(view.BRAND_KEYS.values()):
             self.assertTrue(any(word in r["brand"] for r in rows), word)
+
+
+class SmokeExportTest(unittest.TestCase):
+    """真机冒烟的 debug 导出（#1072）：logd 单条约 4 KB，按字节切、只留每一步的结果。"""
+
+    def test_chunks_fit_the_logcat_limit_in_bytes(self):
+        chunks = view._chunks("关闭的渠道" * 2000)
+        self.assertGreater(len(chunks), 1, "这份结果要真的被分成多块")
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk.encode()), view.EXPORT_LIMIT, "中文按字节算才不会超")
+        self.assertEqual("".join(chunks), "关闭的渠道" * 2000, "拼回来要一字不差")
+
+    def test_lines_are_left_out_and_chunks_reassemble(self):
+        run = {"running": True, "cancel": False, "results": [], "lines": ["一行日志" * 500]}
+        out = view.smoke_export(FakeApi(run=run), "ready")
+        payload = json.loads("".join(out["chunks"]))
+        self.assertEqual(payload["shell"], "ready")
+        self.assertNotIn("lines", payload["run"])
+
+    def test_only_the_step_summary_survives(self):
+        run = {"running": False, "cancel": False, "results": [
+            {"title": "系统广告", "rc": 0, "skipped": False, "stopped": False, "sec": 3,
+             "tail": ["机型脚本跑完：关了 12 个，34 秒"], "failed_steps": ["负一屏与搜索"],
+             "kind": "steps"}]}
+        payload = json.loads("".join(view.smoke_export(FakeApi(run=run), "ready")["chunks"]))
+        row = payload["run"]["results"][0]
+        self.assertEqual(row["summary"], "关了 12 个开关")
+        self.assertEqual(set(row), {"title", "rc", "skipped", "stopped", "sec", "summary"})
+        self.assertTrue(payload["finished"])
+
+    def test_finished_needs_results_or_a_cancel(self):
+        self.assertFalse(view.smoke_export(FakeApi(run={"running": False, "results": []}))["finished"])
+        self.assertFalse(view.smoke_export(FakeApi(run={"running": True, "results": [],
+                                                        "cancel": False}))["finished"])
+        self.assertTrue(view.smoke_export(FakeApi(run={"running": False, "cancel": True,
+                                                       "results": []}))["finished"])
+
+    def test_running_is_reported_at_the_top_level(self):
+        """Kotlin 靠这个字段决定导出循环要不要继续；藏在 chunks 里它读不到（#1072 真机）。"""
+        self.assertTrue(view.smoke_export(FakeApi(run={"running": True, "results": []}))["running"])
+        self.assertFalse(view.smoke_export(FakeApi(run={"running": False, "results": []}))["running"])
+
+    def test_the_export_is_registered_for_the_client(self):
+        self.assertIn("smoke_export", view.EXPORTS)
 
 
 if __name__ == "__main__":

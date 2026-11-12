@@ -1,6 +1,7 @@
 # 一加 13T（PKX110，ColorOS 16.0.10.500 / Android 16）机型脚本。
 # 路径实测：2026-10-28 现场探路（应用与服务、服务管理两页与 PHK110 同 Activity）。
 # 骨架取自 oneplus-PHK110（ColorOS 16）；入口差异参考 docs/清单/OPPO-ColorOS.md 的一加 Ace 5（PKG110）记录。
+# 2026-11-10 软件商店隐私入口接受「隐私」与「隐私授权管理」两种叫法，未复测（#933）。
 # 不挂包、不动通知渠道；这些操作仍走 run.py 的独立、需确认流程。
 BUILD = "PKX110_16.0.10"
 MODELS = ["PKX110"]
@@ -26,7 +27,10 @@ STORE_PROMOTIONS = [
 
 
 def wait_page(activity, title, timeout=6):
-    """等到活动、页标题以及可点击区域连续稳定，避免横向动画期间的越界坐标。"""
+    """等到活动、页标题以及可点击区域连续稳定，避免横向动画期间的越界坐标。
+
+    `title` 可以给一组等价标题：软件商店的隐私页随商店 App 版本叫「隐私」或「隐私授权管理」（#933）。"""
+    titles = (title,) if isinstance(title, str) else tuple(title)
     deadline, previous = time.monotonic() + timeout, None
     while time.monotonic() < deadline:
         if p.locked():
@@ -41,7 +45,7 @@ def wait_page(activity, title, timeout=6):
                and "Button" in n.get("class", "") for t, _, n in texts):
             print("  ! 出现协议/权限按钮，本段跳过，不代为同意")
             return False
-        if not any(t == title for t, _, _ in texts):
+        if not any(t in titles for t, _, _ in texts):
             time.sleep(0.2)
             continue
         switches = p.switches(root)
@@ -54,23 +58,21 @@ def wait_page(activity, title, timeout=6):
             return True
         previous = signature
         time.sleep(0.25)
-    print(f"  ✗ 未确认目标页面「{title}」，不操作开关")
+    print(f"  ✗ 未确认目标页面「{'、'.join(titles)}」，不操作开关")
     return False
 
 
-def open_app_settings(package, activity, title):
-    # 两个 App 均支持此公开设置 Intent，绕开含账号信息的“我的”页。
-    result = p.d.shell(
-        "am start -f 0x10008000 -a oppo.intent.action.APP_SETTINGS -p " + package
-    ).output
-    if "Permission Denial" in result or "SecurityException" in result:
-        print("  ! 系统不允许直达设置，跳过，不提升权限")
-        return False
-    return wait_page(activity, title)
-
-
 def tap_page(text, activity, title):
-    return p.tap(text, exact=True) and wait_page(activity, title)
+    """`text` 可以给一组等价文案，按顺序试；点到第一个就按落点页面判，不退回改写另一支。
+
+    软件商店的隐私入口随商店 App 版本叫「隐私」或「隐私授权管理」（#933）。认不到时留下停在哪个
+    页面与结构摘要。"""
+    names = (text,) if isinstance(text, str) else tuple(text)
+    for name in names:
+        if p.tap(name, exact=True, quiet=len(names) > 1):
+            return wait_page(activity, title)
+    p.note_miss(" / ".join(names))
+    return False
 
 
 def off_exact(names, page, max_screens=16):
@@ -111,6 +113,7 @@ def guard():
 @step("广告跟踪")
 def _():
     # 2026-10-28 实测：隐私页在 com.oplus.securitypermission，设备标识与广告在 OplusSettingsActivity$DevicesIdentifySettingsActivity。
+    skip_in_safe_mode()
     p.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS"); time.sleep(1.2)
     if not tap_page("隐私", "com.oplusos.securitypermission.privacy.PrivacySettingsDashboardActivity", "隐私"):
         return False
@@ -147,8 +150,10 @@ def _():
 def _():
     if not open_app_settings("com.heytap.market", "com.heytap.market.mine.cn.setting.ui.SettingActivity", "应用与服务"):
         return False
-    # 「隐私」在设置页底部「账号与隐私」分组下；必须 exact，说明文字里有“…隐私数据”会误中。
-    if not tap_page("隐私", "com.heytap.market.mine.cn.setting.ui.PrivacyActivity", "隐私"):
+    # 入口在设置页底部「账号与隐私」分组下；必须 exact，说明文字里有“…隐私数据”会误中。
+    # 这一行有的商店版本叫「隐私授权管理」（#933）。
+    if not tap_page(("隐私", "隐私授权管理"), "com.heytap.market.mine.cn.setting.ui.PrivacyActivity",
+                    ("隐私", "隐私授权管理")):
         print("  · 没找到商店「隐私」入口，跳过")
         return False
     # 开关在二级页「个性化推荐」里（与 PKG110 记录一致），入口行不是开关。
@@ -158,13 +163,9 @@ def _():
     return off_exact(["个性化推荐"], "商店·个性化推荐", max_screens=2)
 
 
-def browser_settings():
-    return open_app_settings("com.heytap.browser", "com.heytap.browser.settings.component.BrowserPreferencesPage", "浏览器")
-
-
 @step("浏览器首页")
 def _():
-    if not browser_settings():
+    if not browser_settings_direct():
         return False
     activity = "com.heytap.browser.settings.component.BrowserPreferenceActivity"
     if not tap_page("主页设置", activity, "主页设置"):
@@ -185,7 +186,7 @@ def _():
 
 @step("浏览器广告")
 def _():
-    if not browser_settings():
+    if not browser_settings_direct():
         return False
     activity = "com.heytap.browser.settings.component.BrowserPreferenceActivity"
     if not tap_page("隐私", activity, "隐私") or not tap_page("广告管理", activity, "广告管理"):
@@ -197,7 +198,7 @@ def _():
 
 @step("浏览器个性化")
 def _():
-    if not browser_settings():
+    if not browser_settings_direct():
         return False
     activity = "com.heytap.browser.settings.component.BrowserPreferenceActivity"
     if not tap_page("隐私", activity, "隐私") or not tap_page("个性化管理", activity, "个性化管理"):

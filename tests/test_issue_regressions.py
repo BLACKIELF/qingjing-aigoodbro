@@ -11,7 +11,7 @@ import sys
 import tempfile
 import types
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 import xml.etree.ElementTree as ET
 
 from PIL import Image
@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tool"))
 import adb_link
 import chan_fast as chan
 import fast
+import recipe_kit
 import run
 from fixtures import FakeRunner, fake_adb, phone_stub
 
@@ -30,11 +31,11 @@ from fixtures import FakeRunner, fake_adb, phone_stub
 def channel_phone():
     p = phone_stub("test", d=Mock())
     p.W, p.H = 1080, 1920
-    p.locked = Mock(return_value=False)
-    p.focus = Mock(return_value="com.android.settings/.Settings$ChannelNotificationSettingsActivity")
+    p.conn.locked = Mock(return_value=False)
+    p.screen.focus = Mock(return_value="com.android.settings/.Settings$ChannelNotificationSettingsActivity")
     p.confirm = Mock()
     p.click = Mock()
-    p.tree = Mock(return_value=ET.fromstring('''<hierarchy><node>
+    p.screen.tree = Mock(return_value=ET.fromstring('''<hierarchy><node>
       <node text="营销" bounds="[100,80][600,180]"/>
       <node bounds="[0,300][1080,410]">
         <node text="允许通知" bounds="[60,320][600,390]"/>
@@ -79,9 +80,9 @@ class ShellPipeTests(unittest.TestCase):
 class ScreenshotTests(unittest.TestCase):
     def test_partial_bounds_do_not_read_outside_image(self):
         image = Image.new("RGB", (100, 100), "blue")
-        self.assertIsNone(fast.Phone._pixel_on(image, 70, 70, 160, 120))
-        self.assertIsNone(fast.Phone._pixel_on(image, -10, 0, 10, 10))
-        self.assertTrue(fast.Phone._pixel_on(image, 70, 70, 100, 100))
+        self.assertIsNone(fast.Screen._pixel_on(image, 70, 70, 160, 120))
+        self.assertIsNone(fast.Screen._pixel_on(image, -10, 0, 10, 10))
+        self.assertTrue(fast.Screen._pixel_on(image, 70, 70, 100, 100))
 
     def test_resolution_mismatch_is_unknown_not_off(self):
         p = channel_phone()
@@ -241,18 +242,18 @@ class ChannelTests(unittest.TestCase):
 
     def test_app_master_switch_is_not_channel_switch(self, _sleep):
         p = channel_phone()
-        p.focus.return_value = "com.android.settings/.Settings$AppNotificationSettingsActivity"
+        p.screen.focus.return_value = "com.android.settings/.Settings$AppNotificationSettingsActivity"
         self.assertIsNone(chan.channel_switch(p, "营销", chan.Attempt()))
 
     def test_coloros14_separate_channel_page_is_supported(self, _sleep):
         p = channel_phone()
-        p.focus.return_value = "com.oplus.notificationmanager/com.oplus.notificationmanager.ChannelNotificationSettingsActivity"
+        p.screen.focus.return_value = "com.oplus.notificationmanager/com.oplus.notificationmanager.ChannelNotificationSettingsActivity"
         self.assertEqual(chan.channel_switch(p, "营销", chan.Attempt())[0], "允许通知")
         self.assertIsNone(chan.channel_switch(p, "其他渠道", chan.Attempt()))
 
     def test_coloros14_app_master_page_remains_forbidden(self, _sleep):
         p = channel_phone()
-        p.focus.return_value = "com.oplus.notificationmanager/com.oplus.notificationmanager.AppNotificationSettingsActivity"
+        p.screen.focus.return_value = "com.oplus.notificationmanager/com.oplus.notificationmanager.AppNotificationSettingsActivity"
         self.assertIsNone(chan.channel_switch(p, "营销", chan.Attempt()))
 
     def test_coloros14_unknown_page_or_lookalike_package_is_not_trusted(self, _sleep):
@@ -261,12 +262,12 @@ class ChannelTests(unittest.TestCase):
             "com.oplus.notificationmanager/com.oplus.notificationmanager.OtherActivity",
             "com.example.notificationmanager/com.oplus.notificationmanager.ChannelNotificationSettingsActivity",
         ):
-            p.focus.return_value = focus
+            p.screen.focus.return_value = focus
             self.assertIsNone(chan.channel_switch(p, "营销", chan.Attempt()))
 
     def test_same_text_in_unrelated_page_cannot_authorize_click(self, _sleep):
         p = channel_phone()
-        p.focus.return_value = "com.example/.MarketingSettings"
+        p.screen.focus.return_value = "com.example/.MarketingSettings"
         with patch.object(chan, "parse", return_value=snapshot()), \
              patch.object(chan.ChannelPage, "_enter_app_page", return_value=None):
             self.assertEqual(chan.toggle(p, "com.example", "promo", False, "营销").kind, chan.NOT_CONFIRMED)
@@ -282,7 +283,7 @@ class ChannelTests(unittest.TestCase):
     def test_vivo_app_wide_notification_page_is_refused(self, _sleep):
         # vivo 应用总页与渠道页同一个 Activity；总页有多个开关，「允许通知」管整个 App，不能点
         p = channel_phone()
-        p.focus.return_value = ("com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification"
+        p.screen.focus.return_value = ("com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification"
                                 ".settings.channels.NotificationSettingsActivity")
         root = p.tree()
         extra = ET.fromstring('''<node bounds="[0,500][1080,610]">
@@ -297,7 +298,7 @@ class ChannelTests(unittest.TestCase):
     def test_vivo_channel_page_needs_app_title_from_app_page(self, _sleep):
         # X300 Ultra 实测：总页与渠道页同一个 Activity，只能靠顶栏标题区分
         p = channel_phone()
-        p.focus.return_value = ("com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification"
+        p.screen.focus.return_value = ("com.vivo.systemuiplugin/com.vivo.systemui.statusbar.notification"
                                 ".settings.channels.NotificationSettingsActivity")
         for node in p.tree().iter():
             if node.get("text") == "营销":
@@ -309,7 +310,7 @@ class ChannelTests(unittest.TestCase):
         at.vivo_app = "营销"
         self.assertIsNone(chan.channel_switch(p, "营销", at))      # App 与渠道同名：无法区分
         at.vivo_app = "示例应用"
-        p.focus.return_value = "com.vivo.systemuiplugin/.OtherActivity"
+        p.screen.focus.return_value = "com.vivo.systemuiplugin/.OtherActivity"
         self.assertIsNone(chan.channel_switch(p, "营销", at))
 
     def test_last_click_is_verified_not_reported_as_failure(self, _sleep):
@@ -320,7 +321,7 @@ class ChannelTests(unittest.TestCase):
 
     def test_changed_page_does_not_reuse_coordinates(self, _sleep):
         p = channel_phone()
-        p.click.side_effect = lambda *xy: p.tree.__setattr__("return_value", ET.fromstring("<hierarchy/>"))
+        p.click.side_effect = lambda *xy: p.screen.tree.__setattr__("return_value", ET.fromstring("<hierarchy/>"))
         with patch.object(chan, "parse", return_value=snapshot()):
             self.assertIn("已变化", chan.toggle(p, "com.example", "promo", False, "营销").detail)
         self.assertEqual(p.click.call_count, 1)
@@ -343,19 +344,19 @@ class ChannelTests(unittest.TestCase):
 
     def test_app_page_fallback_navigates_then_checks_channel(self, _sleep):
         p = channel_phone()
-        p.focus.return_value = "com.android.settings/.Settings$AppNotificationSettingsActivity"
+        p.screen.focus.return_value = "com.android.settings/.Settings$AppNotificationSettingsActivity"
         channel_root = p.tree()
-        p.tree.return_value = ET.fromstring('''<hierarchy><node>
+        p.screen.tree.return_value = ET.fromstring('''<hierarchy><node>
           <node text="示例应用" bounds="[100,80][600,180]"/>
           <node clickable="true" bounds="[0,600][1080,710]">
             <node text="营销" bounds="[60,620][600,690]"/>
           </node>
         </node></hierarchy>''')
         def navigate(*_):
-            p.tree.return_value = channel_root
-            p.focus.return_value = "com.android.settings/.SubSettings"
+            p.screen.tree.return_value = channel_root
+            p.screen.focus.return_value = "com.android.settings/.SubSettings"
         p.click.side_effect = navigate
-        p.settle = Mock(return_value=True)
+        p.screen.settle = Mock(return_value=True)
         self.assertEqual(chan.via_app_page(p, "com.example", "营销", chan.Attempt())[0], "允许通知")
         p.click.assert_called_once()
 
@@ -519,11 +520,12 @@ class ExternalAdbServerTests(unittest.TestCase):
         detached.assert_not_called()                           # 输出已经说明是断连，不再多查一次
 
     def test_missing_app_is_still_named_when_phone_is_there(self):
+        """「本机没装」仍是这一句、仍带包名，但类型是跳过（#908）：段包装按跳过收尾，不再记未完成。"""
         p = self.phone()
         p.d.shell.side_effect = [types.SimpleNamespace(exit_code=0, output="No activities found to run, monkey aborted."),
                                  types.SimpleNamespace(exit_code=0, output="")]
         with patch.object(adb_link, "detached", return_value=False):
-            with self.assertRaisesRegex(RuntimeError, "本机没有安装 com.heytap.yoli"):
+            with self.assertRaisesRegex(recipe_kit.MissingPackage, "本机没有安装 com.heytap.yoli"):
                 p.start("com.heytap.yoli")
         self.assertFalse(p.lost)
 
@@ -547,8 +549,8 @@ class ExternalAdbServerTests(unittest.TestCase):
 
     def test_lost_screen_library_error_marks_the_run_lost(self):
         p = self.phone()
-        p.d.dump_hierarchy.side_effect = Exception("HTTPConnectionPool(host='127.0.0.1', port=5037): Max retries exceeded")
-        with self.assertRaises(Exception):
+        p.d.dump_hierarchy.side_effect = RuntimeError("HTTPConnectionPool(host='127.0.0.1', port=5037): Max retries exceeded")
+        with self.assertRaises(RuntimeError):
             p.tree()
         self.assertTrue(p.lost)                                # 后面的段据此快速跳过
 
@@ -738,9 +740,10 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(api.chan_scan("test"), {"error": "读取失败", "detail": "读取失败"})
 
     def test_gui_loads_file_uri_without_http_server(self):
-        fake = types.SimpleNamespace(create_window=Mock(), start=Mock())
+        fake = types.SimpleNamespace(create_window=Mock(return_value=MagicMock()), start=Mock())
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(sys.modules, {"webview": fake}), patch.object(app, "IS_WIN", True), \
+             patch.object(sys, "platform", "win32"), \
              patch.object(app, "data_dir", return_value=directory), \
              patch.object(app, "find_adb", return_value=None), patch.object(sys, "argv", ["app.py"]):
             launch.main()
@@ -776,8 +779,8 @@ class RepeatedChannelNameTests(unittest.TestCase):
     def phone(self, page):
         p = phone_stub("test", d=Mock())
         p.W, p.H = 1080, 2340
-        p.focus = Mock(return_value=self.APP)
-        p.tree = Mock(return_value=ET.fromstring(page))
+        p.screen.focus = Mock(return_value=self.APP)
+        p.screen.tree = Mock(return_value=ET.fromstring(page))
         return p
 
     def test_group_row_without_switch_does_not_block_the_channel_row(self):
@@ -833,12 +836,12 @@ class AdPackagesHarness:
             run.main()
         return out.getvalue()
 
-    def status_json(self, brand):
+    def status_json(self, brand, suspended=False):
         out = io.StringIO()
         with patch.object(run, "info", return_value=dict(self.INFO, brand=brand)), \
              patch.object(run, "recipe_for", return_value=(None, False)), \
              patch.object(run, "locked", return_value=False), \
-             patch.object(run, "suspended", return_value=False), \
+             patch.object(run, "suspended", return_value=suspended), \
              patch.object(run, "quickapps", return_value=[]), \
              patch.object(run, "fold_open", return_value=False), \
              patch.object(run, "input_blocked", return_value=False), \
@@ -859,7 +862,7 @@ class AdPackagesTests(AdPackagesHarness, unittest.TestCase):
 
     def test_status_json_lists_xiaomi_ad_package_for_poco_brand(self):
         self.assertEqual(self.status_json("POCO")["ads"],
-                         [{"pkg": "com.miui.systemAdSolution", "suspended": False}])
+                         [{"pkg": "com.miui.systemAdSolution", "suspended": False, "default_on": True}])
 
     def test_iqoo_brand_stays_empty_in_both_entries(self):
         self.assertNotIn("com.miui.systemAdSolution", self.check_output("iQOO"))
@@ -886,7 +889,8 @@ class GlobalMsaTests(AdPackagesHarness, unittest.TestCase):
         self.assertIn("广告包 com.miui.msa.global：未挂起", self.check_output("Redmi"))
 
     def test_status_json_lists_global_msa_on_global_rom(self):
-        self.assertEqual(self.status_json("Redmi")["ads"], [{"pkg": "com.miui.msa.global", "suspended": False}])
+        self.assertEqual(self.status_json("Redmi")["ads"],
+                         [{"pkg": "com.miui.msa.global", "suspended": False, "default_on": True}])
 
     def test_check_on_china_rom_does_not_mention_global_msa(self):
         self.INSTALLED = AdPackagesHarness.INSTALLED

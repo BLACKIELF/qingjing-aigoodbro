@@ -4,8 +4,9 @@
 浏览器入口是「菜单 → 设置」（不是底栏「我的」），商店没有隐私设置入口，
 系统广告走设置搜索 / 深链（隐私与安全页里没有「更多安全设置」）。
 
-同一份脚本也被底包 BP2A.250605.031 一族里没写专属脚本的小米机借去跑（#833）：它们底栏没有
-「菜单」，设置入口在「我的」页里。两条入口各有用例，落点校验两边都成立（#586）。
+#942 起录制值写 ROM 版本（OS3.0.307.0），底包不再参与挑选，同底包机型不会再被借到这一份。
+浏览器两条入口仍各有用例：底栏有「菜单」时走弹窗、没有时走「我的」页，落点校验两边都成立
+（#586 / #833）。
 """
 import contextlib
 import io
@@ -19,7 +20,7 @@ sys.path.insert(0, str(ROOT / "tool"))
 sys.path.insert(0, str(ROOT / "tests"))
 import fast
 import run
-from fixtures import Clock, fake_phone, install_clock, load_recipe, phone_mock
+from fixtures import Clock, clocked, fake_phone, load_recipe, phone_mock, stub
 
 GEAR_PAGE = """<hierarchy rotation="0">
   <node class="android.widget.FrameLayout" package="com.android.calendar" bounds="[0,0][1080,2340]">
@@ -97,24 +98,25 @@ class Xiaomi24129PN74CRecipeTests(unittest.TestCase):
         path, reference = run.recipe_for("24129PN74C", "Xiaomi")
         self.assertFalse(reference)
         self.assertEqual(Path(path).parent.name, "xiaomi-24129PN74C")
-        self.assertEqual(run.recipe_meta(path)["build"], "BP2A.250605.031")
+        self.assertEqual(run.recipe_meta(path)["build"], "OS3.0.307.0")
         self.assertEqual(run.recipe_meta(path)["models"], ["24129PN74C"])
         self.assertEqual(run.recipe_meta(path)["steps"],
                          ["系统广告", "应用商店", "手机管家", "下载管理", "主题",
                           "浏览器", "全局搜索", "负一屏", "天气和日历"])
 
     def test_build_matches_this_phone_and_not_other_base_packages(self):
+        # 录制值是 ROM 版本，靠 ro.mi.os.version.incremental 命中（#942）；底包不是录制值。
         this_phone = {"build": "BP2A.250605.031.A3", "os": "OS3.0.307.0.WOCCNXM"}
-        self.assertTrue(run.build_ok(this_phone, "BP2A.250605.031"))
-        # OS4.0（小米 18 系列）不是这台机的底包。
-        self.assertFalse(run.build_ok(this_phone, "OS4.0"))
-        # build_ok 同时比对 HyperOS 版本号，这台的 OS3.0.307.0 与 K70 同号。
         self.assertTrue(run.build_ok(this_phone, "OS3.0.307.0"))
+        # OS4.0（小米 18 系列）不是这台机的系统版本。
+        self.assertFalse(run.build_ok(this_phone, "OS4.0"))
 
     def test_same_base_package_as_k80_script_but_own_entry_points(self):
         # 底包相同不等于入口相同：浏览器两条入口都在，底栏「菜单」优先；商店没有隐私设置。
+        # 两份脚本也都不把底包写进 BUILD，同底包机型不会被任一份「同版本」命中（#942）。
         k80 = run.recipe_meta(ROOT / "recipes/redmi-25060RK16C/recipe.py")["build"]
-        self.assertEqual(k80, "BP2A")
+        self.assertEqual(k80, "")
+        self.assertNotIn("BP2A", run.recipe_meta(ROOT / "recipes/xiaomi-24129PN74C/recipe.py")["build"])
         source = (ROOT / "recipes/xiaomi-24129PN74C/recipe.py").read_text(encoding="utf-8")
         self.assertIn('p.tap("菜单", exact=True, scrolls=0, quiet=True)', source)
         self.assertIn('if not p.tab("我的"):', source)
@@ -137,18 +139,17 @@ class Xiaomi24129PN74CRecipeTests(unittest.TestCase):
         for functional in ("显示扫一扫模块", "显示搜索历史模块", "显示书签模块", "显示最常访问模块"):
             self.assertNotIn(functional, source)
 
-    def browser_phone(self, stages, focus, clicked=None, backed=None, only=None, **fields):
+    def browser_phone(self, stages, focus, clicked=None, backed=None, only=None, recipe="recipe.py", **fields):
         """假手机 + 按时间轴换页：底栏点「菜单」会先空转 6 秒，页面切换都排在这之后。"""
         clock = Clock(click_cost=0.05)
-        original = fast.time
-        install_clock(fast, clock)
-        self.addCleanup(setattr, fast, "time", original)
+        clocked(self, fast, clock)
         p = fake_phone(clock=clock, size=(1080, 2400), stages=stages, focus=focus, **fields)
         if clicked is not None:
-            p.click = lambda x, y: (clicked.append((x, y)), clock.click())[1]
+            # 导航阶段经观测基座点击与返回（ADR-0033）：桩要落到 `p.screen`
+            stub(p, "click", lambda x, y: (clicked.append((x, y)), clock.click())[1])
         if backed is not None:
-            p.back = lambda *a, **k: (backed.append(clock.t), clock.click())[1]
-        scope, out = load_recipe(p, ROOT / "recipes/xiaomi-24129PN74C/recipe.py", only=only)
+            stub(p, "back", lambda *a, **k: (backed.append(clock.t), clock.click())[1])
+        scope, out = load_recipe(p, ROOT / "recipes/xiaomi-24129PN74C" / recipe, only=only)
         scope["time"] = clock              # 脚本里的 sleep 也推进设备时间轴，否则点完齿轮页面不会换
         return p, scope, out
 
@@ -164,26 +165,37 @@ class Xiaomi24129PN74CRecipeTests(unittest.TestCase):
         self.assertEqual(backed, [])
 
     def test_browser_falls_back_to_the_my_tab_when_the_bar_has_no_menu(self):
-        """MIX Flip 2 底栏没有「菜单」：走「我的」→ 齿轮，进了设置页才算成功（#833）。"""
-        clicked, backed = [], []
-        # 「我的」页排在 6.2 秒：tap() 探测底栏文字时最多空转 6 秒才放弃，6.2 就是它刚放弃之后。
-        _p, scope, _out = self.browser_phone(
-            [(0.0, BOTTOM_WITHOUT_MENU), (6.2, MINE_PAGE), (7.0, BROWSER_SETTINGS_PAGE)],
-            focus=((0.0, BROWSER), (7.0, BROWSER_SETTINGS)), clicked=clicked, backed=backed)
-        with contextlib.redirect_stdout(io.StringIO()):
-            scope["browser_settings"]()
-        self.assertIn(MINE_CENTER, clicked)
-        self.assertIn(MINE_PAGE_GEAR, clicked)
-        self.assertEqual(backed, [])
+        """MIX Flip 2 底栏没有「菜单」：走「我的」→ 齿轮，进了设置页才算成功（#833）。
+        HyperOS 4 那份 recipe_os4.py 当初漏改，Xiaomi 15 OS4 上整段报「底栏菜单未找到」（#900）。"""
+        for recipe in RECIPES:
+            with self.subTest(recipe=recipe):
+                clicked, backed = [], []
+                # 「我的」页排在 6.2 秒：tap() 探测底栏文字时最多空转 6 秒才放弃，6.2 就是它刚放弃之后。
+                _p, scope, _out = self.browser_phone(
+                    [(0.0, BOTTOM_WITHOUT_MENU), (6.2, MINE_PAGE), (7.0, BROWSER_SETTINGS_PAGE)],
+                    focus=((0.0, BROWSER), (7.0, BROWSER_SETTINGS)), clicked=clicked, backed=backed,
+                    recipe=recipe)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    scope["browser_settings"]()
+                self.assertIn(MINE_CENTER, clicked)
+                self.assertIn(MINE_PAGE_GEAR, clicked)
+                self.assertEqual(backed, [])
+
+    def test_os4_browser_segment_goes_through_browser_settings(self):
+        """OS4 浏览器段调的是带兜底的 browser_settings()，不是只认「菜单」的那条（#900）。"""
+        src = (ROOT / "recipes/xiaomi-24129PN74C/recipe_os4.py").read_text(encoding="utf-8")
+        self.assertIn("    browser_settings()\n", src)
+        self.assertNotIn("浏览器底栏「菜单」未找到", src)
 
     def test_menu_entry_stopping_on_a_blank_focus_still_fails_loudly(self):
-        """底栏有「菜单」却两次都没进设置页、中途读不出前台：不能当成「没有菜单」改走「我的」（#581）。"""
+        """底栏有「菜单」却两次都没进设置页、中途读不出前台：不能当成「没有菜单」改走「我的」（#581）。
+        收尾行与「到了但页面不对」同形，读不出前台时落点是「未知页面」（#912）。"""
         _p, scope, _out = self.browser_phone(
             [(0.0, BOTTOM_WITH_MENU), (0.3, MENU_POPUP), (1.2, TOOLBAR_PANEL),
              (2.0, BOTTOM_WITHOUT_MENU)],
             focus=((0.0, BROWSER), (1.0, "")))
         with contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaisesRegex(RuntimeError, "浏览器设置页没有打开；停在 读不出前台"):
+            with self.assertRaisesRegex(RuntimeError, "浏览器设置页没有打开；停在 未知页面"):
                 scope["browser_settings"]()
 
     def test_my_entry_closes_the_login_popup_before_looking_for_settings(self):
@@ -256,9 +268,7 @@ class Xiaomi24129PN74CRecipeTests(unittest.TestCase):
 
     def gear_phone(self, focus_stages, recipe="recipe.py"):
         clock = Clock()
-        original = fast.time
-        install_clock(fast, clock)
-        self.addCleanup(setattr, fast, "time", original)
+        clocked(self, fast, clock)
         p = fake_phone(clock=clock, stages=[(0.0, GEAR_PAGE)], focus=focus_stages)
         p.back = Mock()
         scope = self.load(p, recipe)

@@ -387,6 +387,30 @@ class BackgroundScreenTest(unittest.TestCase):
                 u2.Device()
         self.assertIn("UiAutomation 被别的无障碍服务占用", str(caught.exception))
 
+    def test_a_missing_display_is_not_an_empty_page(self):
+        """#928：显示不存在时 dump 报错，不能回一个空 hierarchy 让引擎当空白页继续跑。
+
+        旧树也绿，守的是不回退：假 reader 代表 Java 侧新报文，真正的判据在 AndroidScreenReader
+        （本机没有 JDK，未验）。"""
+        gone = "java.lang.IllegalStateException: 显示 7 不存在（这块屏已经没了）"
+        with _using(_Reader(dump=(None, 255, gone))):
+            with self.assertRaises(u2.UiAutomationError) as caught:
+                u2.Device()
+        self.assertIn("显示 7 不存在", str(caught.exception))
+
+    def test_window_size_names_the_display_that_is_gone(self):
+        """#928：问尺寸时读到的是哪块屏没了，要让用户看得出来，而不是一句 NullPointerException。
+
+        旧树也绿，守的是不回退：报文由 AndroidScreenReader 给，本机没有 JDK，未验。"""
+        page = '<hierarchy><node display-id="7" text="菜单" /></hierarchy>'
+        gone = "java.lang.IllegalStateException: 显示 7 不存在（这块屏已经没了）"
+        with _using(_Reader(dump=(page, 0), size=(None, 255, gone))):
+            dev = u2.Device()
+            with self.assertRaises(u2.UiAutomationError) as caught:
+                dev.window_size()
+        self.assertIn("显示 7 不存在", str(caught.exception))
+        self.assertIn("已经没了", str(caught.exception))
+
     def test_a_registered_reader_maps_to_the_busy_type(self):
         """两个客户端抢读屏时，引擎靠这个类型报「读屏服务被占用」，别改成泛泛的读屏错误。"""
         with _using(_Reader((None, 255, "UiAutomationService already registered"))):
@@ -907,6 +931,66 @@ class InprocTest(unittest.TestCase):
         run = inproc.Runner(lambda: dict(os.environ)).run
         self.assertEqual(run("bump.py")[0], "1\n")
         self.assertEqual(run("bump.py")[0], "1\n")
+
+    def logcat(self):
+        """替掉写 logcat 的那一路，返回收到的 (tag, 行) 清单。"""
+        lines = []
+        saved = inproc._engine_log
+        self.addCleanup(setattr, inproc, "_engine_log", saved)
+        inproc._engine_log = lambda tag, text: lines.append((tag, text))
+        return lines
+
+    def test_engine_lines_mirror_into_logcat_line_by_line(self):
+        # 镜像按行切：半行写两次要拼齐，最后一段没有换行的字也要出去；界面那边（队列）看到的不受影响
+        self.script("say.py", """
+            import sys
+            print("核对 3 项")
+            sys.stderr.write("半")
+            sys.stderr.write("行\\n尾")
+        """)
+        lines = self.logcat()
+        proc = inproc.Runner(lambda: dict(os.environ)).spawn("say.py")
+        queue = list(proc.stdout)
+        self.assertEqual(proc.wait(5), 0)
+        self.assertEqual(queue, ["核对 3 项\n", "半行\n", "尾"])
+        self.assertEqual(lines, [(inproc.LOGCAT_TAG, "核对 3 项"), (inproc.LOGCAT_TAG, "半行"),
+                                 (inproc.LOGCAT_TAG, "尾")])
+
+    def test_shared_sink_mirrors_exactly_what_the_queue_shows(self):
+        # Proc 把同一个 _LineSink 当 out 与 err：两个流共用一份缓冲，镜像的行边界要与队列一致
+        self.script("mix.py", """
+            import sys
+            sys.stdout.write("abc")
+            sys.stderr.write("def\\n")
+        """)
+        lines = self.logcat()
+        proc = inproc.Runner(lambda: dict(os.environ)).spawn("mix.py")
+        queue = list(proc.stdout)
+        self.assertEqual(proc.wait(5), 0)
+        self.assertEqual(queue, ["abcdef\n"])
+        self.assertEqual(lines, [(inproc.LOGCAT_TAG, "abcdef")])
+
+    def test_machine_lines_reach_the_ui_but_not_logcat(self):
+        self.script("two.py", """
+            print('#aac:event {"kind": "ui_busy"}')
+            print("核对 3 项")
+        """)
+        lines = self.logcat()
+        out, err, rc = inproc.Runner(lambda: dict(os.environ)).run("two.py")
+        self.assertEqual((out, rc), ('#aac:event {"kind": "ui_busy"}\n核对 3 项\n', 0))
+        self.assertEqual(lines, [(inproc.LOGCAT_TAG, "核对 3 项")])
+
+    def test_a_broken_logcat_leaves_the_output_alone(self):
+        self.script("say.py", "print('一')\nprint('二')\n")
+
+        def boom(tag, text):
+            raise RuntimeError("logcat 写不进去")
+
+        saved = inproc._engine_log
+        self.addCleanup(setattr, inproc, "_engine_log", saved)
+        inproc._engine_log = boom
+        out, err, rc = inproc.Runner(lambda: dict(os.environ)).run("say.py")
+        self.assertEqual((out, err, rc), ("一\n二\n", "", 0))
 
 
 class WaitTest(unittest.TestCase):

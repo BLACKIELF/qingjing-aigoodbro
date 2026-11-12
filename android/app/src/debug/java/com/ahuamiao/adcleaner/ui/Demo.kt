@@ -8,8 +8,9 @@ import org.json.JSONObject
  * 只在 debug 构建里：不连手机、不跑引擎，逐屏验收界面。
  * `adb shell am start -n com.aigoodbro.qingjing/com.ahuamiao.adcleaner.MainActivity --es demo home [--es sheet more]`
  * 页面：setup1 setup2 setup3 setup3mi old stopped-sh ask denied nodev home prepare0 prepare1 choose
- * blocked norecipe scanfail run paused pausing stalled fgmode stopping done failed stopped failed2
- * 面板：more newer restore restored feedback report log；对话框：devoff
+ * blocked norecipe scanfail run paused pausing stalled fgmode stopping done failed stopped failed2 coverage
+ * 面板：more newer update update-downloading update-ready update-error restore restored feedback report log；对话框：devoff
+ * 另有 `--es call smoke`：真机冒烟用，把 shell 状态与这一轮执行结果按块打到 logcat（#1072）。
  *
  * 首次设置的三个演示页仍从真的 view.py 取三步文案（#646）：要先等 Python 启动，期间显示启动页。
  */
@@ -17,6 +18,17 @@ object Demo {
     private val device = Device("demo", "OPPO Find X10 Pro Max", "PKD110")
 
     fun handle(intent: Intent?, model: AppModel) {
+        // 仅 debug：验收同签名 APK 的系统安装入口；正式包不包含 Demo。
+        if (intent?.getStringExtra("call") == "install-update") {
+            val result = com.ahuamiao.adcleaner.Native.installUpdate(
+                intent.getStringExtra("path").orEmpty(), intent.getStringExtra("version").orEmpty())
+            android.util.Log.i("AACUpdateTest", result)
+            return
+        }
+        if (intent?.getStringExtra("call") == "smoke") {   // 真机冒烟的导出入口：shell 状态 + 这一轮结果（#1072）
+            model.debugSmoke()
+            return
+        }
         intent?.getStringExtra("plan")?.let {        // 真引擎验收：--es plan '<计划 JSON>'
             model.debugStart(JSONObject(it))
             return
@@ -53,7 +65,7 @@ object Demo {
             "stalled" -> RunProgress(running = true, idx = 3, total = 8, title = "关闭各 App 里的广告开关", sec = 212, stalled = 95)
             "fgmode" -> RunProgress(running = true, idx = 2, total = 8, title = "存快照", sec = 12)
             "stopping" -> RunProgress(running = true, idx = 4, total = 8, title = "浏览器", sec = 201, cancel = true)
-            "done", "failed", "failed2", "stopped" -> finished(name)
+            "done", "failed", "failed2", "stopped", "coverage" -> finished(name)
             else -> RunProgress()
         }
         val target: Screen = when (name) {
@@ -65,7 +77,7 @@ object Demo {
             "prepare1" -> Screen.Prepare(1)
             "choose", "blocked", "norecipe", "scanfail" -> Screen.Choose
             "run", "paused", "pausing", "stalled", "fgmode", "stopping" -> Screen.Run
-            "done", "failed", "failed2", "stopped" -> Screen.Done(run)
+            "done", "failed", "failed2", "stopped", "coverage" -> Screen.Done(run)
             else -> Screen.Home
         }
         val lines = (1..40).map { "[$it] 关闭 com.example.app$it 的营销渠道" }
@@ -76,6 +88,15 @@ object Demo {
         when (sheet) {
             "more", "newer" -> model.sheet = Sheet.More
             "about" -> model.sheet = Sheet.About
+            "update", "update-downloading", "update-ready", "update-error" -> {
+                model.demoUpdate(JSONObject().put("version", "0.4.2").put("source", "gitee")
+                    .put("state", if (sheet == "update-downloading") "downloading" else "available")
+                    .put("busy", sheet == "update-downloading").put("received", 30).put("size", 100)
+                    .put("can_cancel", sheet == "update-downloading")
+                    .put("can_install", sheet == "update-ready").put("can_download", sheet == "update")
+                    .put("error", if (sheet == "update-error") "下载不完整或校验失败，请重试或切换渠道" else ""))
+                model.sheet = Sheet.Update
+            }
             "restore" -> model.openRestore()
             "restored" -> {
                 model.openRestore()
@@ -100,6 +121,9 @@ object Demo {
             "failed" -> RunProgress(sec = 266, outcome = Outcome.Failed, results = ok.take(2) + StepResult("负一屏与搜索", false, 30, "入口没找到", false, false))
             "failed2" -> RunProgress(sec = 266, outcome = Outcome.Failed, recovery = "读屏连接断开了。先检查读屏连接，再重新开始。", results = ok.take(1) + StepResult("系统广告", false, 3, "读屏连接断开", false, false))
             "stopped" -> RunProgress(sec = 100, cancel = true, outcome = Outcome.Stopped, results = ok.take(2) + StepResult("负一屏与搜索", false, 10, "", false, true))
+            // 脚本只验过一部分时的结果页（#1130）：多一行说明，别的都与 done 一样
+            "coverage" -> RunProgress(sec = 266, outcome = Outcome.Ok, results = ok,
+                coverageNote = "这套机型脚本只在一部分步骤上做过真机验证，其余步骤这次是照脚本直接跑的，建议顺手核对一眼。")
             else -> RunProgress(sec = 266, outcome = Outcome.Ok, results = ok)
         }
     }

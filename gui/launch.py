@@ -35,6 +35,10 @@ def is_cli_program(executable=None):
 
 def dispatch(argv, executable=None):
     """这次启动去哪：'cli' 转发给引擎、'help' 打用法、'usage' 报用法错、'window' 起窗口。"""
+    if argv == ["--smoke-harmony"]:
+        return "harmony-smoke"
+    if len(argv) == 2 and argv[0] == "--apply-update":
+        return "update"
     if len(argv) > 1 and argv[0] == "--cli":
         return "cli"
     if not is_cli_program(executable):
@@ -93,6 +97,13 @@ def smoke_gui(window, result):
                     time.sleep(0.1)
                 else:
                     raise RuntimeError("关于页或随包开源许可未正确加载")
+                # 只渲染合成状态，不枚举或操作鸿蒙手机。
+                window.evaluate_js("""S.deviceKind='harmony'; H={phase:'idle',mode:'clean',device:{name:'鸿蒙测试机'},
+                    can_restore:true,segments:[{id:'ads',name:'系统广告',status:'waiting',rows:[
+                    {title:'个性化广告',want:false,result:''}]}]}; renderHarmony();""")
+                harmony_ok = window.evaluate_js("!!document.querySelector('#harmony-segments input') && document.querySelector('main').textContent.includes('还原改动')")
+                if not harmony_ok:
+                    raise RuntimeError("鸿蒙功能界面未显示")
                 result["ok"] = True
                 print("GUI smoke: file 页面、教程图片、本地接口、失败提示及关于/完整开源许可通过；未连接手机", flush=True)
                 return
@@ -106,6 +117,24 @@ def smoke_gui(window, result):
 
 def main():
     action = dispatch(sys.argv[1:])
+    if action == "harmony-smoke":
+        app._fix_stdio()
+        if __package__:
+            from . import harmony_engine
+        else:
+            import harmony_engine
+        import subprocess
+        hdc = harmony_engine.find_hdc()
+        result = subprocess.run([hdc, "version"], capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=20, check=True, **harmony_engine._no_window())
+        segments = harmony_engine.load_segments()
+        count = sum(len(page['targets']) for segment in segments for page in segment['pages'])
+        if not result.stdout.strip() or count != 13 or len(segments) != 7:
+            raise RuntimeError("鸿蒙随包工具或规则不完整")
+        print(f"Harmony smoke: HDC {result.stdout.strip()} / {len(segments)} 组 / {count} 项；未连接手机")
+        return
+    if action == "update":
+        sys.exit(app.update_install.apply_update(sys.argv[2]))
     if action == "cli":
         app.cli_main(); return
     if action != "window":
@@ -119,6 +148,7 @@ def main():
     if smoke:
         app._fix_stdio()
         api.adb = None                     # 不枚举真机，不自动下载 adb
+        api.harmony_bridge.enabled = False
     result = {"ok": False}
     # 明确 file://：裸文件路径会启动 Bottle HTTP 服务，部分 Windows 环境回环连接超时（#18）。
     url = Path(app.BASE, "gui", "web", "index.html").resolve().as_uri()
@@ -142,6 +172,14 @@ def main():
             native.setHasShadow_(True)
 
         w.events.loaded += lambda: AppHelper.callAfter(apply_titlebar)
+    api.updater.installer.close = w.destroy
+    def closing():
+        if api.harmony_bridge.close_if_idle():
+            return True
+        if w.create_confirmation_dialog('鸿蒙任务还没结束', '停止任务并关闭？会等当前开关回读和原状态保存完成后再退出。'):
+            api.harmony_bridge.close_when_done(w.destroy)
+        return False
+    w.events.closing += closing
     options = {"debug": "--debug" in sys.argv, "http_server": False}
     if smoke:
         options.update(func=smoke_gui, args=(w, result))

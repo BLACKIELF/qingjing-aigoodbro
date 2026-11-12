@@ -5,7 +5,9 @@
 BUILD = "OS4.0.4"
 MODELS = ["M332BF"]
 import time
+from entries import THEME_DEAD_ENDS
 
+# 注入面的 opened() 从这里取 adb_link.DeviceLost
 import adb_link
 
 
@@ -33,26 +35,6 @@ def gear(toolbar_only=False):
                 return True
             break
     return False
-
-
-def opened(start):
-    """试一条直达页面：到了返回真。这台机器上版本不同的页面可能没有，返回假走菜单；
-    断线照常上抛——跑到一半掉线时 Phone 只置 lost、抛的是普通 RuntimeError（沿用 #293 的做法）。"""
-    try:
-        start()
-        return True
-    except adb_link.DeviceLost:
-        raise
-    except RuntimeError as e:
-        if p.lost:
-            raise
-        print(f"  · 直达不通（{e}），走菜单")
-        return False
-
-
-def tap_any(*names, scrolls=6):
-    """依次试几个入口名，点中一个就返回 True。"""
-    return any(maybe(n, scrolls) for n in names)
 
 
 @step("系统广告")
@@ -116,18 +98,27 @@ def _():
 
 @step("主题")
 def _():
-    # HyperOS 4 桌面入口在 themestore，打开后转到 thememanager；后者本身没有 LAUNCHER。
-    if "package:" in p.d.shell("pm path com.miui.themestore").output:
-        p.start("com.miui.themestore", foreground="com.android.thememanager")
-    else:
-        if "package:" not in p.d.shell("pm path com.android.thememanager").output:
-            print("  · 本机没有主题商店，跳过"); return
-        p.start("com.android.thememanager", ".ThemeResourceProxyTabActivity")
-    before = p.sig()
+    # 直达主题管理包的代理页（沿用 #730 的做法：它没有 LAUNCHER，monkey 拉不起来）；经主题商店冷启动
+    # 还要过一道重定向过渡窗，前台校验容易误判（#906）。落点被系统转走时仍按跳过收尾。
+    if "package:" not in p.d.shell("pm path com.android.thememanager").output:
+        print("  · 本机没有主题管理包，跳过"); return
+    start_or_skip("com.android.thememanager", ".ThemeResourceProxyTabActivity",
+                  dead_ends=THEME_DEAD_ENDS, reason="主题页打不开")
+    tap_sig = p.sig()
     if not p.tab("我的"):
-        raise RuntimeError("主题商店底部「我的」标签没找到")
-    p.settle(before, 2)
-    gear()                                      # 精确认「设置」，不点「设置壁纸」（沿用 #305 的做法）
+        raise RuntimeError("主题底部「我的」标签没找到；" + p.page_evidence())
+    p.settle(tap_sig, 2)
+    # 导航失败以前与「本页没有目标开关」同形：三步都校验，报错带页面现场（#906）。
+    if not gear():                              # 精确认「设置」，不点「设置壁纸」（沿用 #305 的做法）
+        raise RuntimeError("主题设置入口没找到；" + p.page_evidence())
+    p.await_page()                              # 齿轮点完这一页可能还没画完
+    before = {}
+    for _ in range(2):                          # 行也可能在首屏之下，off() 自己会翻页找
+        before.update({title: on for title, on, _ in p.switches()})
+        if not p.scroll_more():
+            break
+    p.top(2)
+    require_switches(before, ["每次联网时通知"], "主题·设置", contains=True)
     p.off(only=["每次联网时通知"], keep=["自动更新"], page="主题·设置")
     if maybe("隐私设置"):
         p.off(only=["个性化推荐"], page="主题·隐私"); p.back()

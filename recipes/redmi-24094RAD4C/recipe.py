@@ -6,46 +6,7 @@
 BUILD = "OS3.0.306.0"
 MODELS = ["24094RAD4C"]
 import time
-
-
-def gear(toolbar_only=False):
-    """很多小米 App 的设置是右上角齿轮图标，没有文字。
-    匹配只认正好是「设置」的描述、正文或 setting 类 id：商店「我的」页有一行正文「去功能设置里
-    重新开启」，主题商店有「设置壁纸」，按包含匹配会先命中它们、点进别的子页，整段跑空（#305 / #374）。"""
-    from fast import bounds, icon_hit
-
-    for n in p.tree().iter("node"):
-        l, t, r, b = bounds(n)
-        icon = "ImageView" in n.get("class", "") and r-l < p.W * 0.25 and b-t < p.H * 0.15
-        if icon_hit(n) and (n.get("clickable") == "true" or icon) and p.on_screen(n) and (not toolbar_only or b < p.H * 0.23):
-            p.click((l + r) // 2, (t + b) // 2); time.sleep(1)
-            return True
-    if not toolbar_only and p.find("设置", exact=True, edge_ok="tab"):
-        return p.tap("设置", exact=True, scrolls=0)
-    for n in p.tree().iter("node"):
-        key = (n.get("content-desc") or "") + " " + (n.get("resource-id") or "")
-        from fast import bounds
-        l, t, r, b = bounds(n)
-        if any(k in key.lower() for k in ("更多", "more", "menu")) and n.get("clickable") == "true" and p.on_screen(n) and b < p.H * 0.22:
-            p.click((l + r) // 2, (t + b) // 2); time.sleep(0.5)
-            if p.tap("设置", exact=True, scrolls=0):
-                return True
-            break
-    return False
-
-
-def tap_tab(name):
-    """点顶部标签页；内层文字节点不可点，点外层的可点容器。"""
-    for n in p.tree().iter("node"):
-        if n.get("clickable") != "true":
-            continue
-        label = (n.get("text") or "") + (n.get("content-desc") or "")
-        from fast import bounds
-        l, t, r, b = bounds(n)
-        if name in label and t < p.H * 0.3 and p.on_screen(n):
-            p.click((l + r) // 2, (t + b) // 2); time.sleep(1)
-            return True
-    return p.tap(name, exact=True, scrolls=0)
+from entries import THEME_DEAD_ENDS
 
 
 def tap_bottom_tab(name):
@@ -72,17 +33,11 @@ def wait_bottom_tab(name, tries=5):
     return False
 
 
-def tap_any(*names, scrolls=6):
-    """依次试几个入口名，点中一个就返回 True。"""
-    return any(maybe(n, scrolls) for n in names)
-
-
 def close_with_plain_tap(names, page):
     """下载管理和浏览器会吞掉短按；普通 tap 后确认，并核对其他开关未变。"""
     before = {title: on for title, on, _ in p.switches()}
     targets = [title for title in before if any(name in title for name in names)]
-    if not all(any(name in title for title in targets) for name in names):
-        raise RuntimeError(f"{page}：未识别全部目标开关，未操作")
+    require_switches(before, names, page, contains=True)
     for title in targets:
         if not before[title]:
             continue
@@ -162,22 +117,31 @@ def _():
 
 @step("主题")
 def _():
-    # 桌面入口在 themestore，内部会跳到 thememanager。冷启动偶有可跳过的开屏广告。
-    if "package:" in p.d.shell("pm path com.miui.themestore").output:
-        p.d.shell("am start -f 0x10008000 -n com.miui.themestore/com.miui.thememanagerstore.ThemeResourceTabActivity")
-    else:
-        # 没有主题商店时直接起 thememanager：它没有 LAUNCHER activity，monkey 拉不起来（#730）
-        if "package:" not in p.d.shell("pm path com.android.thememanager").output:
-            print("  · 本机没有主题商店，跳过"); return
-        p.start("com.android.thememanager", ".ThemeResourceProxyTabActivity")
+    # 直达主题管理包的代理页（沿用 #730 的做法：它没有 LAUNCHER，monkey 拉不起来）；经主题商店冷启动
+    # 要过一道重定向过渡窗，前台校验容易误判，也可能续在上次留下的子页上（#906）。
+    # 落点被系统转去商店详情页或桌面时仍按跳过收尾。
+    if "package:" not in p.d.shell("pm path com.android.thememanager").output:
+        print("  · 本机没有主题管理包，跳过"); return
+    start_or_skip("com.android.thememanager", ".ThemeResourceProxyTabActivity",
+                  dead_ends=THEME_DEAD_ENDS, reason="主题页打不开")
     time.sleep(3)
-    if p.find("跳过广告"):
+    if p.find("跳过广告"):                      # 冷启动偶有可跳过的开屏广告
         p.tap("跳过广告", scrolls=0)
+    # 导航失败以前与「本页没有目标开关」同形：进「我的」、进设置页、点名开关三步都校验，
+    # 0 个开关按失败报并带页面现场（#906）。
     if not wait_bottom_tab("我的"):
-        raise RuntimeError("主题商店底部「我的」标签没有找到")
+        raise RuntimeError("主题底部「我的」标签没找到；" + p.page_evidence())
     p.dismiss()
     if not gear():
-        raise RuntimeError("主题商店设置入口没有找到")
+        raise RuntimeError("主题设置入口没找到；" + p.page_evidence())
+    p.await_page()                              # 齿轮点完这一页可能还没画完
+    before = {}
+    for _ in range(2):                          # 行也可能在首屏之下，off() 自己会翻页找
+        before.update({title: on for title, on, _ in p.switches()})
+        if not p.scroll_more():
+            break
+    p.top(2)
+    require_switches(before, ["每次联网时通知"], "主题·设置", contains=True)
     p.off(only=["每次联网时通知"], keep=["自动更新"], page="主题·设置")
     if maybe("隐私设置"):
         p.off(only=["个性化推荐"], page="主题·隐私"); p.back()

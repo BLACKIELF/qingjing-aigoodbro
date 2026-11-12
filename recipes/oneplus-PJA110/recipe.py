@@ -10,10 +10,6 @@ PROMOTIONS = ["首页：悬浮活动图标", "首页：活动弹窗", "首页：
 START_ACTIVITIES = {"com.heytap.browser": "com.android.browser.BrowserActivity"}
 
 
-def tap(name, scrolls=4):
-    require(p.tap(name, exact=True, scrolls=scrolls), f"未找到入口「{name}」")
-
-
 def app_settings(package, activity):
     if p.focus() == f"{package}/{activity}":
         return
@@ -29,20 +25,11 @@ def app_settings(package, activity):
     require(p.focus() == f"{package}/{activity}", "设置页未打开，停止本段")
 
 
-def read_switches(max_screens):
-    current = {}
-    for index in range(max_screens):
-        current.update({title: on for title, on, _ in p.switches()})
-        if index + 1 == max_screens or not p.scroll_more():
-            break
-    return current
-
-
 def close_named(names, page, max_screens=1):
     global VERIFIED_SWITCHES
     p.top(max_screens)
     before = read_switches(max_screens)
-    require(all(name in before for name in names), f"{page}：未识别全部目标开关，未操作")
+    require_switches(before, names, page)
     p.top(max_screens)
     p.off(only=names, page=page, max_screens=max_screens)
     p.top(max_screens)

@@ -19,53 +19,6 @@ STORE_PROMOTIONS = [
 ]
 
 
-def wait_page(activity, title, timeout=6):
-    """等活动、页标题和可点击区域连续稳定，避免横向动画期间的越界坐标。"""
-    deadline, previous = time.monotonic() + timeout, None
-    while time.monotonic() < deadline:
-        if p.locked():
-            return False
-        if not p.focus().endswith(activity):
-            time.sleep(0.2)
-            continue
-        root = p.tree()
-        texts = p.texts(root)
-        # 只识别真正的同意按钮，不把设置页里的「隐私政策」链接当作协议弹窗。
-        if any(t in ("同意", "同意并继续", "同意并使用", "允许")
-               and "Button" in n.get("class", "") for t, _, n in texts):
-            print("  ! 出现协议/权限按钮，本段跳过，不代为同意")
-            return False
-        if not any(t == title for t, _, _ in texts):
-            time.sleep(0.2)
-            continue
-        switches = p.switches(root)
-        if any(not (0 < xy[0] < p.W and 0 < xy[1] < p.H) for _, _, xy in switches):
-            time.sleep(0.2)
-            continue
-        signature = tuple(t for t, _, _ in texts), tuple(switches)
-        if signature == previous:
-            return True
-        previous = signature
-        time.sleep(0.25)
-    print(f"  ✗ 未确认目标页面「{title}」，不操作开关")
-    return False
-
-
-def open_app_settings(package, activity, title):
-    """公开设置 Intent 直达，绕开含账号信息的「我的」页。"""
-    result = p.d.shell(
-        "am start -f 0x10008000 -a oppo.intent.action.APP_SETTINGS -p " + package
-    ).output
-    if "Permission Denial" in result or "SecurityException" in result:
-        print("  ! 系统不允许直达设置，跳过，不提升权限")
-        return False
-    return wait_page(activity, title)
-
-
-def tap_page(text, activity, title):
-    return p.tap(text, exact=True) and wait_page(activity, title)
-
-
 def close_titles(wanted, max_rounds=8):
     """逐页只点标题完全等于 wanted 里某项的开关，点完回读。
     ColorOS 17 有「应用建议」是「应用建议小卡」子串的情况，p.off 的子串匹配会误伤，所以用精确标题。"""
@@ -142,6 +95,7 @@ def guard():
 def _():
     # ColorOS 17：「隐私」已并入「隐私与安全」。设置搜索能搜到「设备标识与广告」但点搜索结果不跳转，
     # 因此走面板路径；该页 Activity 为 OplusSettingsActivity$DevicesIdentifySettingsActivity。
+    skip_in_safe_mode()
     p.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS")
     time.sleep(1.5)
     if not p.tap("隐私与安全", scrolls=3):
@@ -176,14 +130,9 @@ def _():
     return off_exact(STORE_PROMOTIONS, "商店·推广入口")
 
 
-def browser_settings():
-    return open_app_settings("com.heytap.browser",
-                             "com.heytap.browser.settings.component.BrowserPreferencesPage", "浏览器")
-
-
 @step("浏览器首页")
 def _():
-    if not browser_settings():
+    if not browser_settings_direct():
         return False
     activity = "com.heytap.browser.settings.component.BrowserPreferenceActivity"
     if not tap_page("主页设置", activity, "主页设置"):
@@ -204,7 +153,7 @@ def _():
 
 @step("浏览器广告")
 def _():
-    if not browser_settings():
+    if not browser_settings_direct():
         return False
     activity = "com.heytap.browser.settings.component.BrowserPreferenceActivity"
     if not tap_page("隐私", activity, "隐私") or not tap_page("广告管理", activity, "广告管理"):
@@ -217,7 +166,7 @@ def _():
 @step("浏览器个性化")
 def _():
     # 该页只有「个性化内容推荐」「个性化广告推荐」两项；两项都开时只读到后者的 Switch。
-    if not browser_settings():
+    if not browser_settings_direct():
         return False
     activity = "com.heytap.browser.settings.component.BrowserPreferenceActivity"
     if not tap_page("隐私", activity, "隐私") or not tap_page("个性化管理", activity, "个性化管理"):

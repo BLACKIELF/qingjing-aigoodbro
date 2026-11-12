@@ -1,12 +1,13 @@
 # OPPO Find X9 Pro（PLG110），ColorOS 16.0.10.501(CN01) / Android 16。
 # 2026-11-01 真机逐页记录；仅收录本机已识别的开关，不包含包操作和通知渠道。
+# 软件商店隐私入口接受「隐私」与「隐私授权管理」两种叫法，未复测（#933）。
 BUILD = "PLG110_16.0.10"
 MODELS = ["PLG110"]
 
-import os
 import re
 import time
 
+# bounds 只给注入面的 carousel_choices 取（它按执行作用域解析这个名字）
 from fast import ScreenLocked, bounds
 RESULTS = []
 VERIFIED_SWITCHES = 0
@@ -70,9 +71,17 @@ def open_page(command, activity, title=None):
 
 
 def tap_page(text, activity, title=None, scrolls=4, exact=True):
-    require(p.tap(text, exact=exact, scrolls=scrolls), f"未找到入口「{text}」")
-    wait_page(activity, title or text)
-    return True
+    """`text` 可以给一组等价文案，按顺序试，先命中的点进去。
+
+    软件商店的隐私入口随商店 App 版本叫「隐私」或「隐私授权管理」（#933），单写一支就一定有一段
+    0 项。认不到时留下停在哪个页面与结构摘要，与 note_miss 同形。"""
+    names = (text,) if isinstance(text, str) else tuple(text)
+    for name in names:
+        if p.tap(name, exact=exact, scrolls=scrolls, quiet=len(names) > 1):
+            wait_page(activity, title or name)
+            return True
+    p.note_miss(" / ".join(names))
+    raise RuntimeError(f"未找到入口「{names[0]}」")
 
 
 def read_switches(activity, title=None, max_screens=8, expect=None):
@@ -96,7 +105,7 @@ def close_named(names, page, activity, title=None, max_screens=8, reopen=None, d
     """精确核对标题再调用引擎；回读关闭状态，同时保留其他功能开关。"""
     global VERIFIED_SWITCHES
     before = read_switches(activity, title, max_screens, expect=names)
-    require(all(name in before for name in names), f"{page}：未识别全部目标开关，未操作")
+    require_switches(before, names, page)
     if any(before[name] for name in names):
         p.top(max_screens)
         p.off(only=list(names), keep=[name for name in before if name not in names],
@@ -120,78 +129,15 @@ def app_settings(package, activity, title=None):
               activity, title)
 
 
-def carousel_choices(root):
-    """只识别有明确 checked 状态的单选控件；预览图的同名文字不能作为点击目标。"""
-    parents = {child: node for node in root.iter() for child in node}
-    choices = {}
-    labels = {"显示轮播推荐", "不显示轮播推荐"}
-    for node in root.iter("node"):
-        if node.get("checkable") != "true" or "RadioButton" not in node.get("class", ""):
-            continue
-        row = node
-        for _ in range(5):
-            captions = {x.get("text", "") for x in row.iter("node")} | {
-                x.get("content-desc", "") for x in row.iter("node")}
-            matched = captions & labels
-            if len(matched) == 1:
-                name = matched.pop()
-                require(name not in choices, "轮播单选项不唯一，未点击")
-                require(p.on_screen(node) and node.get("enabled") == "true", "轮播单选项不可操作")
-                require(node.get("checked") in ("true", "false"), "轮播单选状态未知，未点击")
-                choices[name] = (node.get("checked") == "true", bounds(node))
-                break
-            row = parents.get(row)
-            if row is None or len(matched) > 1:
-                break
-    require(set(choices) == labels and sum(on for on, _ in choices.values()) == 1,
-            "无法确认轮播单选状态，未使用固定坐标")
-    return choices
-
-
-def hide_carousel():
-    global VERIFIED_SWITCHES
-    activity = ASSISTANT + "setting.recommendservice.RecommendServiceSettingActivity"
-    wait_page(activity, "推荐服务")
-    before = read_switches(activity, "推荐服务", max_screens=1)
-    require("推荐服务" in before, "未读到推荐服务总开关，未操作")
-    choices = carousel_choices(p.tree())
-    if not choices["不显示轮播推荐"][0]:
-        l, t, r, b = choices["不显示轮播推荐"][1]
-        require(p.focus() == activity, "点击前页面变化，未操作")
-        p.click((l + r) // 2, (t + b) // 2)
-        time.sleep(.4)
-        current = carousel_choices(p.tree())
-        require(current["不显示轮播推荐"][0], "轮播推荐回读未确认不显示")
-        p.changed.append(("负一屏·推荐服务", "轮播推荐：不显示"))
-    require(read_switches(activity, "推荐服务", 1) == before, "推荐服务总开关变化，请核对")
-    VERIFIED_SWITCHES += 1
-    print("  · 轮播推荐：已确认不显示，推荐服务总开关保持原值", flush=True)
-
-
-def assistant_settings():
-    p.d.shell("input keyevent HOME")
-    time.sleep(.8)
-    for _ in range(4):
-        texts = {text for text, _, _ in p.texts()}
-        if {"我的服务", "添加卡片"} <= texts:
-            break
-        require(p.focus().startswith("com.android.launcher/"), "未停在系统桌面，请勿同时操作手机")
-        p.d.shell(f"input swipe {p.W//7} {p.H//2} {p.W*6//7} {p.H//2} 250")
-        time.sleep(.8)
-    else:
-        raise RuntimeError("未进入负一屏，未继续操作")
-    require(p.tap("我的", exact=True, scrolls=0), "未找到负一屏「我的」入口")
-    tap_page("设置", ASSISTANT + "setting.AssistantScreenSettingActivity", scrolls=0)
-
-
 # ==================== 各段具体实现 ====================
 
 @step("广告跟踪")
 def _():
     global VERIFIED_SWITCHES
+    skip_in_safe_mode()
     model = p.d.shell("getprop ro.product.model").output.strip()
     build = p.d.shell("getprop ro.build.display.id").output.strip()
-    if os.environ.get("AAC_REF") or model != "PLG110" or not build.startswith(BUILD):
+    if model != "PLG110" or not build.startswith(BUILD):
         skip("参考或版本不同时不批量处理逐应用广告跟踪，需重新核对")
     print("  将关闭逐应用 OAID 广告跟踪许可；不重置设备标识符。", flush=True)
     system_settings()
@@ -213,7 +159,7 @@ def _():
     global VERIFIED_SWITCHES
     print("  将关闭个性化推荐与推广服务；保留下载更新与应用安全。", flush=True)
     app_settings("com.heytap.market", MARKET + "SettingActivity", "软件商店")
-    tap_page("隐私授权管理", MARKET + "PrivacyActivity", scrolls=8)
+    tap_page(("隐私", "隐私授权管理"), MARKET + "PrivacyActivity", scrolls=8)
     activity = MARKET + "PersonalRecommendActivity"
     tap_page("个性化推荐", activity, scrolls=0)
     close_named(["个性化推荐"], "软件商店·个性化推荐", activity, "个性化推荐", 4)

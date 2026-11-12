@@ -72,7 +72,7 @@ def close_named(names, page, max_screens=1, reopen=None, gone=()):
     first = wait_switches()
     require(first, f"{page}：页面里没读到开关，未操作")
     before = read_switches(max_screens, first=first)
-    require(all(name in before for name in names), f"{page}：未识别全部目标开关，未操作")
+    require_switches(before, names, page)
     p.top(max_screens)
     p.off(only=names, page=page, max_screens=max_screens)
     if reopen:
@@ -107,7 +107,7 @@ def close_all(page, max_screens):
     require(first, f"{page}：没读到开关，未操作")
     before = read_switches(max_screens, first=first)
     require(before, f"{page}：没读到开关，未操作")
-    p.top(max_screens)                   # 读完整页会翻到底，p.off 只往下翻，得先回到顶部
+    p.top(max_screens)                   # 读完整页会翻到底；p.off 自己也回顶，这一下是让前后两段都从页顶读
     p.off(page=page, max_screens=max_screens)
     p.top(max_screens)
     current = read_switches(max_screens)
@@ -120,6 +120,7 @@ def close_all(page, max_screens):
 def _():
     """设置 → 隐私与安全 → 设备标识与广告 → 广告跟踪。
     每个 App 一个开关、没有总开关，本机 96 个 App，分五屏。"""
+    skip_in_safe_mode()
     p.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS"); time.sleep(1.2)
     p.miss = 0
     # 17 把入口改名叫「隐私与安全」：先试新名字，免得在旧名字上白翻一轮、还打印一行失败（#292）。
@@ -257,6 +258,7 @@ def _():
 def _():
     """小布建议 → 其他 → 应用建议：搜索首页上那排「应用建议」卡片，
     每个被推荐的应用一个开关（com.oplus.metis），整页关掉。"""
+    skip_in_safe_mode()
     p.d.shell("am start -f 0x10008000 -a android.settings.SETTINGS"); time.sleep(1.2)
     tap("OPPO AI", scrolls=6)
     tap("小布建议", scrolls=6)

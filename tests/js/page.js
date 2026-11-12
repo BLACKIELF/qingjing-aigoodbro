@@ -18,7 +18,8 @@ function pollResult(over = {}) {
   };
 }
 
-const stepDone = { title: "关闭营销通知", rc: 0, sec: 3, tail: ["拨了 2 个"], skipped: false, stopped: false };
+const stepDone = { title: "关闭营销通知", rc: 0, sec: 3, summary: "关了 2 个渠道",
+                   tail: ["拨了 2 个"], skipped: false, stopped: false };
 
 async function openPage({ api = {} } = {}) {
   const errors = [];
@@ -38,6 +39,10 @@ async function openPage({ api = {} } = {}) {
     adb_info: () => ({ path: null, source: "none" }),
     latest_version: () => null,
     check_update: () => ({ status: "current" }),
+    start_update_check: () => ({state: "current", busy: false}),
+    update_state: () => ({state: "current", busy: false}),
+    old_install_notice: () => null,
+    dismiss_old_install: () => true,
     poll: () => pollResult(),
     ...api,
   };

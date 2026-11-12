@@ -72,6 +72,8 @@ test("启动静默检查更新，手动按钮复用未完成请求并提供下�
     assert.equal(download.classList.contains("hide"), false);
     assert.deepEqual(opened, []);
     download.click();
+    assert.match(page.document.querySelector("#modalbox").textContent, /检查更新/);
+    [...page.document.querySelectorAll("#modalbox button")].find(b => b.textContent === "打开下载页").click();
     assert.deepEqual(opened, [url]);
   } finally { page.close(); }
 });

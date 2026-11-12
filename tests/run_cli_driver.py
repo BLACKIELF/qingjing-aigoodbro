@@ -1,8 +1,10 @@
 """起一次 tool/run.py：假 adb + 临时备份目录，返回规范化后的 rc / stdout / stderr。
 
 基线生成器（tests/make_run_cli_baseline.py）与对拍测试都用它，
-「同一批输入」的定义只有这一处。规范化只动两类东西：临时目录的绝对路径、
-备份目录名里的时间戳（`Backups.create` 用 `%Y%m%d-%H%M`）。
+「同一批输入」的定义只有这一处。规范化只动三类东西：临时目录的绝对路径、
+备份目录名里的时间戳（`Backups.create` 用 `%Y%m%d-%H%M`），以及 `status-json` 里从台账现读的
+覆盖度 / 证据来源 / 验证日期——那三样跟着 `recipes/verified.toml` 的日常维护变，不是命令行为，
+`tests/test_verify_ledger.py` 单独验它们的真实取值。
 """
 import json
 import os
@@ -14,7 +16,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 FAKE_ADB = HERE / "fake_adb.py"
 STAMP = re.compile(r"\d{8}-\d{4}")
-DROP = ("AAC_EVENTS", "AAC_GUI", "AAC_PAUSE_FILE", "ADB", "ADBUTILS_ADB_PATH")
+LEDGER_FIELD = re.compile(r'("recipe_(?:coverage|evidence|verified)": )"(?:[^"\\]|\\.)*"')
+DROP = ("AAC_EVENTS", "AAC_GUI", "AAC_PAUSE_FILE", "AAC_CAPTURES", "ADB", "ADBUTILS_ADB_PATH")
 
 
 def _adb_wrapper(directory):
@@ -26,6 +29,7 @@ def _adb_wrapper(directory):
 
 
 def normalize(text, work):
+    text = LEDGER_FIELD.sub(r'\1"<LEDGER>"', text)
     return STAMP.sub("<TS>", text.replace(os.fspath(work), "<TMP>"))
 
 

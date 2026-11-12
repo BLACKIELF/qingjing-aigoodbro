@@ -11,13 +11,11 @@
 草稿不是适配：入口路径来自探路读屏，未经人工逐步核对；自检只证明「进得去、关得掉、回读确认」。
 转正式机型脚本前必须人工在手机上核对，并补上 BUILD 录制版本。不要直接放进 recipes/。
 """
-import datetime, json, os, re, shlex, subprocess, sys
+import datetime, json, os, re, subprocess, sys
 import xml.etree.ElementTree as ET
-for _st in (sys.stdout, sys.stderr):
-    try:
-        _st.reconfigure(encoding="utf-8", errors="replace")   # Windows 控制台默认不是 UTF-8
-    except Exception:
-        pass
+from stdio import use_utf8_console
+
+use_utf8_console()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import entries
 import fast                                    # 只读 want_state / 驱动 Phone；不改引擎
@@ -45,7 +43,7 @@ def parse_tsv(path):
         if cols and cols[0] == "包名":
             continue                            # 表头
         cols += [""] * (len(TSV_COLS) - len(cols))
-        rows.append(dict(zip(TSV_COLS, cols[:len(TSV_COLS)])))
+        rows.append(dict(zip(TSV_COLS, cols[:len(TSV_COLS)], strict=True)))    # 上一行已把 cols 补齐到 len(TSV_COLS)
     return rows
 
 
@@ -88,51 +86,17 @@ def select_rows(rows, pick_titles=()):
 # ---------- 生成草稿 ----------
 
 def step_name(pkg, page):
-    """@step("...") 里不能出现引号/反斜杠/换行：run.py recipe_meta 按这个字面格式解析步骤名。"""
+    """@step("...") 里不能出现引号/反斜杠/换行：recipe_meta 按这个字面格式解析步骤名。"""
     name = f"{pkg} · {page}"
     for bad in ('"', "\\", "\r", "\n"):
         name = name.replace(bad, "")
     return name
 
 
+# 草稿只留台账变量：`read_switches` / `close_named` 用注入面那一份（#1151），否则新写出的
+# 脚本又把本地副本带走，两代实现的坑重挖一遍。
 DRAFT_HELPERS = '''
 VERIFIED_SWITCHES = 0        # 回读确认关闭的开关数
-MISSING_SWITCHES = []        # 没找到的开关（待人工确认）
-PENDING_SWITCHES = []        # 找到了但回读没确认关闭（待人工确认）
-
-
-def read_switches(max_screens):
-    current = {}
-    for index in range(max_screens):
-        current.update({title: on for title, on, _ in p.switches()})
-        if index + 1 == max_screens or not p.scroll_more():
-            break
-    return current
-
-
-def close_named(names, page, max_screens=1):
-    """待验证壳：只关 only= 点名的开关；没找齐不操作；关完回读确认。
-    与正式机型脚本的 close_named 不同：找不到/没确认时记进报告，不中断其余步骤。
-    开关在第二屏以后找不到时，把 max_screens 改大再自检。"""
-    global VERIFIED_SWITCHES
-    p.top(max_screens)
-    before = read_switches(max_screens)
-    missing = [name for name in names if name not in before]
-    if missing:
-        MISSING_SWITCHES.extend(missing)
-        print(f"  ✗ {page}：未找到 {missing}，未操作", flush=True)
-        return
-    p.top(max_screens)
-    p.off(only=names, page=page, max_screens=max_screens)
-    p.top(max_screens)
-    current = read_switches(max_screens)
-    still = [name for name in names if current.get(name) is not False]
-    PENDING_SWITCHES.extend(still)
-    if still:
-        print(f"  ✗ {page}：回读未确认关闭 {still}", flush=True)
-        return
-    VERIFIED_SWITCHES += len(names)
-    print(f"  ✓ {page}：回读确认关闭 {len(names)} 项", flush=True)
 '''
 
 
@@ -145,7 +109,8 @@ def render_draft(groups, model, build, source):
         f"# 生成时间：{when}；来源：{source}",
         "# 自检：python3 tool/run.py -s <序列号> adapt check <本文件>",
         "#   自检只证明「进得去、关得掉、回读确认」，不代表适配完成；",
-        "#   转为正式机型脚本前，必须人工在手机上核对每一步，并补 BUILD 录制版本。",
+        "#   转为正式机型脚本前，必须人工在手机上核对每一步，并补 BUILD 录制版本"
+        "（小米系填 HyperOS 版本号，别填 Android 底包）。",
         "# 不要直接放进 recipes/：放进去会被当成本型号的正式脚本自动匹配。",
         "# ======================================================================",
         f"BUILD = {json.dumps(build)}",
@@ -170,8 +135,8 @@ def render_draft(groups, model, build, source):
     lines += [
         "",
         "",
-        'print(f"\\n草稿自检：回读确认 {VERIFIED_SWITCHES} 项，未找到 {len(MISSING_SWITCHES)} 项，"',
-        '      f"待人工确认 {len(PENDING_SWITCHES)} 项，未完成步骤 {len(FAILED_STEPS)} 个", flush=True)',
+        'print(f"\\n草稿自检：回读确认 {VERIFIED_SWITCHES} 项，"',
+        '      f"未完成步骤 {len(FAILED_STEPS)} 个", flush=True)',
         "",
     ]
     return "\n".join(lines)
@@ -244,7 +209,8 @@ def cmd_gen(rest):
     if not model:
         print("没能从文件名认出型号，MODELS 为空；补型号用 --model，或直接把文件名改成 探路-<型号>.tsv")
     if not build:
-        print("BUILD 为空：自检时不比对系统版本；转正式脚本前请填上录制版本（ro.build.display.id）")
+        print("BUILD 为空：自检时不比对系统版本；转正式脚本前请填上录制版本"
+              "（小米系填 ro.mi.os.version.incremental，别填 ro.build.display.id 的 Android 底包）")
     print(f"下一步：python3 tool/run.py -s <序列号> adapt check {out}")
     print("自检通过也不等于适配完成：请人工在手机上核对每一步，再决定是否转为正式机型脚本。")
     return 0
@@ -259,9 +225,10 @@ def check_draft(p, recipe_path, only=()):
         src = f.read()
     # 手改过的草稿若写了不带 only= 的 p.off()，靠这个也只关点名的开关，不整页全关。
     p.safe_mode = True
+    p.screen.captures.task = "adapt"        # 失败现场按任务归档（#1126）
     g = {"p": p, "__name__": "__draft__", "ONLY": list(only)}
-    # `adapt gen` 生成的草稿自带 DRAFT_HELPERS，会覆盖这层注入（#838 不迁移它）；
-    # 手改草稿或以后剥掉草稿模板时，这一行才是它的前导来源。
+    # 草稿的 `close_named` / `read_switches` 也来自这层注入（#1151）：点名开关缺一个就整段
+    # 报错、这一步记成失败，没找到的项因此落在 failed_steps 里，不再有 missing / pending 两份台账。
     recipe_kit.preamble(p, g)
     build = p.d.shell("getprop ro.build.display.id").output.strip()
     osv = p.d.shell("getprop ro.mi.os.version.incremental").output.strip()
@@ -271,29 +238,25 @@ def check_draft(p, recipe_path, only=()):
     exec(compile(src, recipe_path, "exec"), g)
     return {
         "verified": g.get("VERIFIED_SWITCHES", 0) or 0,
-        "missing": list(g.get("MISSING_SWITCHES", []) or []),
-        "pending": list(g.get("PENDING_SWITCHES", []) or []),
         "failed_steps": list(g.get("FAILED_STEPS", []) or []),
     }
 
 
 def print_report(report):
-    """适配报告：找到几个/关成几个/没找到几个/待人工确认几个。部分完成不说成成功。"""
+    """适配报告：关成几个、哪几步没做成。部分完成不说成成功。"""
     verified = report["verified"]
-    missing, pending, failed = report["missing"], report["pending"], report["failed_steps"]
+    failed = report["failed_steps"]
     print("\n================ 适配报告（草稿 · 安全模式自检） ================")
     print(f"  回读确认关闭：{verified} 项")
-    print(f"  没找到：{len(missing)} 项" + (f"（{'、'.join(missing)}）" if missing else ""))
-    print(f"  待人工确认：{len(pending)} 项" + (f"（{'、'.join(pending)}）" if pending else ""))
     print(f"  未完成步骤：{len(failed)} 个" + (f"（{'、'.join(failed)}）" if failed else ""))
-    ok = verified > 0 and not missing and not pending and not failed
+    ok = verified > 0 and not failed
     if ok:
         print("结论：自检通过——勾选的开关都已找到并回读确认关闭。")
         print("      这仍不代表适配完成：请人工在手机上核对入口和效果，再决定是否转为正式机型脚本。")
-    elif verified == 0 and not pending:
+    elif verified == 0:
         print("结论：自检未通过——没有回读确认关闭任何开关。请把上面的开关名和步骤名交给人工核对。")
     else:
-        print("结论：部分完成——已确认关闭的项见上；没找到/待人工确认的项必须人工在手机上核对，")
+        print("结论：部分完成——已确认关闭的项见上；没做成的那几步必须人工在手机上核对，")
         print("      不能把部分完成当成适配成功。")
     print("==================================================================")
     return ok
@@ -323,8 +286,6 @@ def cmd_check(rest):
 
 
 # ---------- 试入口 ----------
-
-CLEAR_TASK = "0x10008000"
 
 
 def _installed_packages(p):
@@ -359,14 +320,12 @@ def survey(p, family, words, log=print, now=None, sleep=None):
     for group, entry in entries.ENTRIES.get(family, {}).items():
         for d in entry.direct:
             page = entries.full(d.pkg, d.activity)
-            # 带清栈参数启动会立刻退出的页面只能裸启动（entries.Direct.keep_task）
-            flag = "" if d.keep_task else f" -f {CLEAR_TASK}"
-            result = p.reader.shell(f"am start -W{flag} -n {shlex.quote(d.pkg + '/' + page)}")
+            result = p.reader.shell(entries.start_command(d, wait=True))
             if getattr(result, "exit_code", 0) or re.search(r"Error|Exception", result.output or "", re.I):
                 log(f"✗ 打不开  {group} {page}")
                 rows.append({"group": group, "page": page, "landed": False, "expect": False, "words": []})
                 continue
-            if not wait.until(lambda: entries.landed(p, d), timeout=4, poll=0.2, now=now, sleep=sleep):
+            if not wait.until(lambda: entries.landed(p, d), timeout=4, poll=0.2, now=now, sleep=sleep):  # noqa: B023 - d 当轮创建当轮消费，until 同步轮询
                 log(f"落在别处（实际 {p.focus() or '未知页面'}）  {group} {page}")
                 rows.append({"group": group, "page": page, "landed": False, "expect": False, "words": []})
                 continue

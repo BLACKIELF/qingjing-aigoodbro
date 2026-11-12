@@ -259,7 +259,7 @@ class DisconnectTests(unittest.TestCase):
                 try:
                     raise fast.adbutils.AdbError("closed")
                 except fast.adbutils.AdbError as e:
-                    raise fast.u2.exceptions.AdbShellError(e)
+                    raise fast.u2.exceptions.AdbShellError(e)  # noqa: B904 - 测试隐式异常链
             except Exception as chained:
                 self.assertIsInstance(adb_link.lost_from(chained, "x"), adb_link.DeviceLost)
         with patch.object(adb_link, "present", return_value=True):
@@ -355,7 +355,7 @@ class GuiTests(unittest.TestCase):
             api.runner.spawns = [stopped, finish]
             api._work([self.app.Task("关闭营销通知", "run.py", ["-s", "test", "x"]),
                        self.app.Task("关闭快应用", "run.py", ["-s", "test", "quickapp", "off"]),
-                       self.app.Task("收尾", "run.py", ["-s", "test", "finish"])])
+                       self.app.Task("收尾", "run.py", ["-s", "test", "finish"], always_run=True)])
             self.assertEqual(len(api.runner.spawn_calls), 2)
             self.assertEqual([(r["title"], r.get("stopped", False)) for r in api.job.results], [("关闭营销通知", True), ("收尾", False)])
             self.assertIsNone(api.last_error)
@@ -420,10 +420,10 @@ class PauseTests(unittest.TestCase):
 
     def test_recipe_segments_pause_at_their_lock_check_and_wait_for_unlock(self):
         p = phone_stub("test", d=Mock(), pause_at_lock_check=True)
-        p.wait_unlocked = Mock(return_value=True)
-        with patch.object(fast, "pause_point", return_value=True):
+        p.conn.wait_unlocked = Mock(return_value=True)
+        with patch("phone.connection.pause_point", return_value=True):
             self.assertFalse(p.locked())
-        p.wait_unlocked.assert_called_once()
+        p.conn.wait_unlocked.assert_called_once()
         p.d.shell.assert_not_called()
 
     def test_channels_pause_only_between_channels(self):

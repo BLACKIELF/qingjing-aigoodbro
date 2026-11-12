@@ -75,9 +75,11 @@ chaquopy {
 // 读屏是 App 自己的 ShellServer（#623），不再带 u2.jar
 val syncEngine by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/aac-assets/aac"))
-    from(repo.resolve("tool")) { into("tool"); include("*.py", "*.dex") }
-    from(repo.resolve("recipes")) { into("recipes"); include("*/recipe*.py"); exclude("zztest-*/**") }
-    from(repo.resolve("gui")) { into("gui"); include("app.py", "winpreflight.py", "version.py", "web/chime.wav") }
+    from(repo.resolve("tool")) { into("tool"); include("**/*.py", "*.dex") }   // ** 覆盖 tool/phone/ 子包（ADR-0033）
+    // verified.toml 是 status-json 的验证档位来源（#1124），不随包发出去手机上就少这三个值
+    from(repo.resolve("recipes")) { into("recipes"); include("*/recipe*.py", "verified.toml"); exclude("zztest-*/**") }
+    // 这份清单要覆盖 gui/app.py 导入期需要的每个模块（手机入口启动就 import app），tests/test_android_bundle.py 守着
+    from(repo.resolve("gui")) { into("gui"); include("app.py", "winpreflight.py", "version.py", "updates.py", "update_install.py", "harmony_bridge.py", "web/chime.wav") }
     from(repo.resolve("LICENSE")) { into("legal") }
     from(repo.resolve("licenses/AiGoodBro-UI-MIT.txt")) { into("legal") }
     from(repo.resolve("gui/web/img/wechat-contact.png")) { into("support") }
@@ -101,4 +103,6 @@ dependencies {
     implementation("org.conscrypt:conscrypt-android:2.5.3")
     // ShellServer 只用 java.io 与 ProcessBuilder，能在 JVM 上单测协议层（android/README.md）
     testImplementation("junit:junit:4.13.2")
+    // JVM 单测里 android.jar 的 org.json 是空壳（方法一律抛 not mocked），更新快照的派生要用真的
+    testImplementation("org.json:json:20240303")
 }

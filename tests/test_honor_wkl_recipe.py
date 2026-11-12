@@ -23,16 +23,17 @@ class HonorWKLRecipeTests(unittest.TestCase):
         p = phone_stub("test", d=Mock())
         p.W, p.H = 1080, 2400
         p.d.window_size.return_value = (p.W, p.H)
-        p.tree = Mock(return_value=ET.fromstring(xml))
+        p.screen.tree = Mock(return_value=ET.fromstring(xml))
         p.locked = Mock(return_value=False)
         return p
 
     def closing_scope(self, before, after):
         p = Mock(changed=[])
-        p.focus.return_value = "com.example/.Settings"
-        p.tree.return_value = ET.fromstring("<hierarchy/>")
+        p.screen = p      # 机型脚本直接写 p.focus()，与观测基座用同一处桩
+        p.screen.focus.return_value = "com.example/.Settings"
+        p.screen.tree.return_value = ET.fromstring("<hierarchy/>")
         scope = self.load(p)
-        scope["page"] = Mock()
+        scope["settle_page"] = Mock()
         scope["labels"] = Mock(return_value={"设置"})
         scope["scan"] = Mock(side_effect=[before, after])
         return p, scope
@@ -109,6 +110,7 @@ class HonorWKLRecipeTests(unittest.TestCase):
         p, scope = self.closing_scope({"应用更新": True}, {})
         with self.assertRaisesRegex(RuntimeError, "未识别全部目标"):
             scope["close_named"](["个性化广告"], "测试", "com.example", "设置")
+        scope["settle_page"].assert_called_once()
         p.off.assert_not_called()
         self.assertEqual(scope["VERIFIED_SWITCHES"], 0)
 
@@ -122,6 +124,7 @@ class HonorWKLRecipeTests(unittest.TestCase):
         filtered = []
         p.off.side_effect = lambda **kw: filtered.extend(p.switches())
         scope["close_named"](["个性化广告"], "测试", "com.example", "设置")
+        scope["settle_page"].assert_called_once()
         self.assertEqual([row[0] for row in filtered], ["个性化广告"])
         self.assertEqual(scope["VERIFIED_SWITCHES"], 1)
 
@@ -129,6 +132,7 @@ class HonorWKLRecipeTests(unittest.TestCase):
         p, scope = self.closing_scope({"个性化广告": True}, {"个性化广告": True})
         with self.assertRaisesRegex(RuntimeError, "回读未确认"):
             scope["close_named"](["个性化广告"], "测试", "com.example", "设置")
+        scope["settle_page"].assert_called_once()
         self.assertEqual(scope["VERIFIED_SWITCHES"], 0)
 
     def test_unrelated_change_is_not_reported_as_verified(self):
@@ -136,11 +140,13 @@ class HonorWKLRecipeTests(unittest.TestCase):
                                      {"个性化广告": False, "评论提醒": False})
         with self.assertRaisesRegex(RuntimeError, "其他开关状态变化"):
             scope["close_named"](["个性化广告"], "测试", "com.example", "设置")
+        scope["settle_page"].assert_called_once()
         self.assertEqual(scope["VERIFIED_SWITCHES"], 0)
 
     def test_protection_switch_must_be_on(self):
         p, scope = self.closing_scope({"限制广告跟踪": False}, {"限制广告跟踪": True})
         scope["close_named"](["限制广告跟踪"], "测试", "com.example", "设置")
+        scope["settle_page"].assert_called_once()
         self.assertEqual(scope["VERIFIED_SWITCHES"], 1)
 
     def test_account_page_custom_switch_never_takes_screenshot(self):
@@ -170,7 +176,7 @@ class HonorWKLRecipeTests(unittest.TestCase):
         with patch.object(scope["time"], "sleep"), scope["safe_ui"]():
             self.assertIsNone(p.confirm())
         p.d.click.assert_not_called()
-        root = p.tree.return_value
+        root = p.screen.tree.return_value
         ET.SubElement(root, "node", text="关闭个性化广告推荐", bounds="[100,300][800,400]")
         ET.SubElement(root, "node", text="取消", bounds="[100,700][200,800]")
         with patch.object(scope["time"], "sleep"), scope["safe_ui"]():
