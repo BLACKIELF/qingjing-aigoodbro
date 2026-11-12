@@ -147,7 +147,8 @@ class FetchTest(unittest.TestCase):
 
     def test_stage_vendor_lays_out_the_bundle_resources(self):
         spec, payload = sample_spec()
-        staged = hdc_fetch.stage_vendor(self.root, "mac-x64", spec=spec, downloader=FakeDownloader(payload))
+        staged = hdc_fetch.stage_vendor(self.root, "mac-x64", spec=spec, downloader=FakeDownloader(payload),
+                                        cache=self.root / "isolated-cache")
         vendor = self.root / "harmony" / "desktop" / "vendor" / "mac-x64"
         self.assertEqual(sorted(Path(p).name for p in staged), ["hdc", "libusb_shared.dylib"])
         self.assertTrue((vendor / "hdc").is_file())

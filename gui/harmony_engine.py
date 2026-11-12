@@ -265,9 +265,23 @@ def hdc_candidates(*, arch=None, env=None, bundle=None, which=None, home=None):
 
 
 def find_hdc(*, arch=None, env=None, bundle=None, which=None, home=None):
+    env = os.environ if env is None else env
+    arch = hdc_fetch.arch_of() if arch is None else arch
+    cache = hdc_fetch.cache_dir(arch, env) if arch in hdc_fetch.PLATFORMS else None
+    explicit = env.get('HDC')
     for c in hdc_candidates(arch=arch, env=env, bundle=bundle, which=which, home=home):
-        if Path(c).is_file():
-            return c
+        path = Path(c)
+        if not path.is_file():
+            continue
+        if cache is not None and path == cache / path.name and c != explicit:
+            try:
+                files = hdc_fetch.PLATFORMS[arch]['files']
+                if not all((cache / name).is_file() and hdc_fetch._sha256(cache / name) == digest
+                           for name, (_, digest) in files.items()):
+                    continue
+            except OSError:
+                continue
+        return c
     raise FileNotFoundError('没找到 hdc；源码运行请先执行 python gui/hdc_fetch.py')
 
 

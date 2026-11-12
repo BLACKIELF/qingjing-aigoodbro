@@ -1,8 +1,10 @@
 """#898：找 hdc 的候选顺序——显式 HDC → 缓存目录 → 包内 → PATH → SDK 默认。"""
 import os
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from gui import hdc_fetch, harmony_engine as engine
 
@@ -51,8 +53,26 @@ class LookupTest(unittest.TestCase):
     def test_find_hdc_returns_first_existing_candidate(self):
         cache = self.touch("cache", hdc_fetch.RELEASE, "mac-x64", EXE)
         env = {"AAC_HDC_CACHE": str(self.root / "cache")}
+        usb = Path(cache).parent / "libusb_shared.dylib"
+        usb.write_bytes(b"usb")
+        spec = {"files": {EXE: ("hdc", hashlib.sha256(b"").hexdigest()),
+                          usb.name: ("usb", hashlib.sha256(b"usb").hexdigest())}}
+        with patch.dict(hdc_fetch.PLATFORMS, {"mac-x64": spec}):
+            self.assertEqual(engine.find_hdc(env=env, arch="mac-x64", bundle=self.root / "bundle",
+                                             which=lambda _name: None, home=self.root / "home"), cache)
+
+    def test_bad_cache_falls_back_to_bundled_hdc(self):
+        self.touch("cache", hdc_fetch.RELEASE, "mac-x64", EXE)
+        bundled = self.touch("bundle", "harmony", "desktop", "vendor", "mac-x64", EXE)
+        env = {"AAC_HDC_CACHE": str(self.root / "cache")}
         self.assertEqual(engine.find_hdc(env=env, arch="mac-x64", bundle=self.root / "bundle",
-                                         which=lambda _name: None, home=self.root / "home"), cache)
+                                         which=lambda _name: None, home=self.root / "home"), bundled)
+
+    def test_explicit_hdc_is_not_subject_to_cache_pinning(self):
+        explicit = self.touch("cache", hdc_fetch.RELEASE, "mac-x64", EXE)
+        env = {"AAC_HDC_CACHE": str(self.root / "cache"), "HDC": explicit}
+        self.assertEqual(engine.find_hdc(env=env, arch="mac-x64", bundle=self.root / "bundle",
+                                         which=lambda _name: None, home=self.root / "home"), explicit)
 
     def test_find_hdc_raises_when_nothing_exists(self):
         with self.assertRaises(FileNotFoundError):
